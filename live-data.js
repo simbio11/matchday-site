@@ -7,111 +7,60 @@
 // 를 추가하면 동작해요. (Claude 아티팩트 안에서는 외부 API 호출이 막혀 있어서
 // 동작하지 않아요 — 반드시 외부 배포 후 사용하세요.)
 //
-// 이 스크립트가 하는 일:
-//   1) 프록시(vercel-proxy 폴더를 배포한 주소 — 이전에 쓰던 worker.js/Cloudflare
-//      Workers는 api-sports.io 쪽에서 공유 IP를 막아둔 게 확인돼서 Vercel로
-//      옮겼어요)를 통해 api-sports.io의 축구/야구/농구/배구/격투기 데이터를 가져와요.
-//   2) F1은 키가 필요 없는 OpenF1(api.openf1.org)에서 "직접" 가져와요 (프록시 불필요).
+// 이 스크립트가 하는 일 (2번째 개편):
+//   1) 축구(K리그1)/야구(KBO)/농구(KBL)/배구(V리그)는 TheSportsDB의 무료 공개
+//      키("123", 회원가입도 필요 없어요)를 브라우저에서 "직접" 호출해요.
+//      api-sports.io 무료 플랜은 실제로 테스트해보니 "현재 시즌 데이터는
+//      무료로 접근 불가"(2022~2024년 과거 시즌만 허용)라는 게 확인돼서,
+//      TheSportsDB로 통째로 옮겼어요. 이러면 Vercel 프록시(vercel-proxy 폴더,
+//      이 저장소엔 남아있지만 이제 이 4개 종목에는 쓰이지 않아요)나 키를
+//      숨길 필요 자체가 없어져요 — TheSportsDB의 "123"은 원래 공개용 테스트
+//      키라 숨길 필요가 없는 값이에요.
+//   2) F1은 키가 필요 없는 OpenF1(api.openf1.org)에서 "직접" 가져와요.
 //   3) 가져온 데이터를 index.html이 이해하는 MATCHES 형식으로 변환해서
 //      window.MATCHDAY.setSportMatches(sport, matches) 로 화면에 반영해요.
 //
-// ⚠️ 정직하게 말씀드리면: api-sports.io(축구/야구/농구/배구/격투기) 응답의
-// 필드 이름(예: fixture.status.short, teams.home.name 등)은 이 API 계열의
-// 공개 문서에 널리 알려진 "일반적인" 구조를 기준으로 작성했어요. 실제 키로
-// 호출해본 게 아니라서 100% 정확하다고 보장은 못 드려요. 아래 각 map* 함수
-// 안에 console.log(raw)를 넣어뒀으니, 실제로 연동하실 때 브라우저 콘솔에서
-// 실제 응답 구조를 확인하고 다른 점이 있으면 알려주시면 바로 고쳐드릴게요.
-// (OpenF1의 /meetings, /sessions, /session_result, /drivers 필드는
-// openf1.org 공식 문서에서 직접 확인한 필드예요.)
+// ⚠️ 정직하게 말씀드리면: TheSportsDB의 K리그1(4689)/KBO(4830)/KBL(5124)/
+// V리그 남(5757)·여(5756) 리그 번호와 필드 이름(strHomeTeam, dateEvent,
+// strStatus 등)은 실제로 그 리그 id로 호출해서 2026년 현재 시즌 경기가
+// 나오는 걸 직접 확인했어요. 다만 라이브 진행 중 상태 표기(strStatus 값)는
+// 축구/야구/농구/배구가 서로 다를 수 있어서 100% 검증은 못 했어요 — 콘솔에
+// raw sample을 찍어뒀으니 이상하면 알려주세요.
+// OpenF1(F1)의 /meetings, /sessions, /session_result, /drivers 필드는
+// openf1.org 공식 문서에서 직접 확인한 필드예요.
 // ===================================================================
 
 (function () {
   "use strict";
 
-  // ---------------- 설정 (여기를 채워주세요) ----------------
+  // ---------------- 설정 ----------------
 
-  // 1) 프록시 배포 주소를 넣어주세요. Cloudflare Worker는 api-sports.io 쪽에서
-  //    공유 IP를 막아둔 게 확인돼서, Vercel Serverless Function(vercel-proxy
-  //    폴더)으로 바꾸는 걸 추천해요. Vercel 프로젝트를 배포하면 생기는
-  //    https://<프로젝트이름>.vercel.app 주소를 여기 넣어주세요.
-  var WORKER_BASE = "https://matchdayvercel.vercel.app"; // Vercel 프록시 (동작 확인 완료)
+  // TheSportsDB 무료 공개 테스트 키예요(회원가입 불필요, 공식 문서에 명시된 값이라
+  // 숨길 필요가 없어요). 분당 30회 제한이 있어서 너무 자주 새로고침하면 막힐 수 있어요.
+  var SPORTSDB_KEY = "123";
+  var SPORTSDB_BASE = "https://www.thesportsdb.com/api/v1/json/" + SPORTSDB_KEY;
 
-  // 2) 종목별로 여러 리그를 배열로 넣을 수 있어요. 국내 리그는 확인 완료했고,
-  //    해외 리그도 원하시면 같은 방식으로 추가하면 돼요 (id를 모르면 배열에서
-  //    빼거나 비워두세요 — 그 리그만 건너뛰고 예시 데이터가 유지돼요).
-  //    프리미어리그(39)는 api-football 쪽에서 워낙 널리 알려진 공개 번호라
-  //    바로 넣어뒀어요. MLB/NBA 등 다른 해외 리그는 KBO 때처럼 curl로 직접
-  //    확인해서 알려주시면 추가해드릴게요 (NBA는 api-basketball이 아니라
-  //    별도의 v2.nba.api-sports.io 상품이라 별도 작업이 필요해요).
+  // 종목별로 여러 리그를 넣을 수 있어요. 전부 실제 id로 호출해서 2026년 현재
+  // 시즌 경기가 나오는 걸 확인한 번호예요.
   var LEAGUES = {
-    soccer: [
-      { id: 292, label: "K리그1" },
-      { id: 39, label: "프리미어리그" }
-    ],
-    baseball: [
-      { id: 5, label: "KBO" }
-      // { id: ???, label: "MLB" }  // curl로 확인되면 추가
-    ],
-    basketball: [
-      { id: 91, label: "KBL", season: "2026-2027" }
-      // NBA는 api-basketball이 아니라 별도 API라 지금 구조로는 못 붙여요.
-    ],
+    soccer: [ { id: 4689, label: "K리그1" } ],
+    baseball: [ { id: 4830, label: "KBO" } ],
+    basketball: [ { id: 5124, label: "KBL" } ],
     volleyball: [
-      { id: 151, label: "V리그(남)" },
-      { id: 152, label: "V리그(여)" }
+      { id: 5757, label: "V리그(남)" },
+      { id: 5756, label: "V리그(여)" }
     ]
   };
 
-  var SEASON = 2026;
-  // 농구(api-basketball)만 시즌 표기가 "2026"이 아니라 "2026-2027" 같은
-  // 문자열 형식이라, 위 LEAGUES.basketball 항목에 season을 따로 지정해뒀어요.
-  // 지금(2026-09-14)은 KBL 25-26시즌은 이미 끝났고 26-27시즌은 아직 개막 전
-  // (2026-10-03 시작)이라 이 사이엔 실제 경기가 없을 수 있어요.
-
-  // 조회할 날짜 범위 (오늘 기준 ±N일). 너무 크게 잡으면 캐시가 자주 갱신되지 않을 수 있어요.
-  var DAYS_BEFORE = 2;
-  var DAYS_AFTER = 5;
-
-  // ---------------- 공용 유틸 ----------------
-
-  function pad2(n) { return String(n).padStart(2, "0"); }
-
-  function isoDate(d) {
-    return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
-  }
-
-  function dateRange() {
-    var out = [];
-    var base = new Date();
-    for (var i = -DAYS_BEFORE; i <= DAYS_AFTER; i++) {
-      var d = new Date(base);
-      d.setDate(d.getDate() + i);
-      out.push(isoDate(d));
-    }
-    return out;
-  }
-
-  // 후보 경로들을 순서대로 시도해서 처음 발견되는 값을 반환해요.
-  // (api-sports.io 응답 구조가 예상과 다를 때를 대비한 방어적 코드예요.)
-  function pick(obj, paths, fallback) {
-    for (var i = 0; i < paths.length; i++) {
-      var parts = paths[i].split(".");
-      var cur = obj;
-      var ok = true;
-      for (var j = 0; j < parts.length; j++) {
-        if (cur == null || typeof cur !== "object" || !(parts[j] in cur)) { ok = false; break; }
-        cur = cur[parts[j]];
-      }
-      if (ok && cur !== undefined && cur !== null) return cur;
-    }
-    return fallback;
-  }
+  // (참고) 예전엔 api-sports.io + Vercel 프록시(vercel-proxy 폴더)를 썼는데,
+  // 무료 플랜이 "현재 시즌 데이터 접근 불가"(2022~2024년 과거 시즌만 허용)라서
+  // 못 쓰게 됐어요. UFC/격투기(MMA)를 나중에 붙일 때 유료로 전환하면 그 프록시를
+  // 다시 쓸 수 있어서 코드는 남겨뒀어요 — 지금은 아래 WORKER_BASE가 비어 있으면
+  // 그냥 조용히 건너뛰어요.
+  var WORKER_BASE = "";
 
   function proxyFetch(sport, path, params) {
-    if (!WORKER_BASE) {
-      console.warn("[live-data] WORKER_BASE가 설정되지 않아 " + sport + " 데이터를 건너뜁니다. live-data.js 상단을 채워주세요.");
-      return Promise.resolve(null);
-    }
+    if (!WORKER_BASE) return Promise.resolve(null);
     var qs = new URLSearchParams(params || {}).toString();
     var url = WORKER_BASE.replace(/\/$/, "") + "/api/" + sport + "/" + path + (qs ? "?" + qs : "");
     return fetch(url)
@@ -122,131 +71,110 @@
       });
   }
 
-  // ---------------- 상태 매핑 (best-effort, 실제 응답으로 검증 필요) ----------------
+  // ---------------- TheSportsDB 유틸 ----------------
 
-  // 축구(api-football) status.short 코드: NS(예정), 1H/2H/HT/ET/BT/P/LIVE(진행중),
-  // FT/AET/PEN(종료). 공개 문서 기준 — 다른 코드가 오면 "scheduled"로 처리해요.
-  var LIVE_CODES = ["1H", "2H", "HT", "ET", "BT", "P", "LIVE", "INT"];
-  var FINISHED_CODES = ["FT", "AET", "PEN", "AWD", "WO", "CANC", "PST", "ABD"];
-
-  function mapStatus(code) {
-    if (!code) return "scheduled";
-    code = String(code).toUpperCase();
-    if (FINISHED_CODES.indexOf(code) !== -1) return "finished";
-    if (LIVE_CODES.indexOf(code) !== -1) return "live";
-    return "scheduled";
+  function sportsdbFetch(path, params) {
+    var qs = new URLSearchParams(params || {}).toString();
+    var url = SPORTSDB_BASE + path + (qs ? "?" + qs : "");
+    return fetch(url)
+      .then(function (res) { return res.json(); })
+      .catch(function (e) {
+        console.warn("[live-data] TheSportsDB 요청 실패 (" + url + ")", e);
+        return null;
+      });
   }
 
-  // ---------------- 종목별 매퍼 ----------------
-
-  function mapFootballFixture(raw, leagueLabel) {
-    console.log("[live-data] football raw sample", raw);
-    var statusCode = pick(raw, ["fixture.status.short", "status.short"], "NS");
-    var homeGoals = pick(raw, ["goals.home"], null);
-    var awayGoals = pick(raw, ["goals.away"], null);
+  // TheSportsDB는 날짜(dateEvent)/시간(strTime)을 UTC 기준으로 줘요. 사이트는
+  // 한국시간(KST, UTC+9) 표기를 쓰니 여기서 변환해요. strTimestamp(UTC ISO
+  // 문자열)가 있으면 그걸 우선 쓰고, 없으면 dateEvent+strTime을 UTC로 간주해요.
+  function toKst(dateEvent, strTime, strTimestamp) {
+    var utcDate;
+    if (strTimestamp) {
+      utcDate = new Date(strTimestamp.replace(" ", "T") + (strTimestamp.indexOf("Z") === -1 ? "Z" : ""));
+    } else if (dateEvent) {
+      utcDate = new Date(dateEvent + "T" + (strTime || "00:00:00") + "Z");
+    } else {
+      return { date: "", time: "" };
+    }
+    if (isNaN(utcDate.getTime())) return { date: dateEvent || "", time: (strTime || "").slice(0, 5) };
+    var kst = new Date(utcDate.getTime() + 9 * 3600000);
+    var pad = function (n) { return String(n).padStart(2, "0"); };
     return {
-      id: "live-fb-" + pick(raw, ["fixture.id", "id"], Math.random()),
-      date: (pick(raw, ["fixture.date", "date"], "") + "").slice(0, 10),
-      time: (pick(raw, ["fixture.date", "date"], "") + "").slice(11, 16),
-      sport: "soccer",
-      league: leagueLabel,
-      venue: pick(raw, ["fixture.venue.name", "venue.name"], ""),
-      home: pick(raw, ["teams.home.name"], "홈팀"),
-      away: pick(raw, ["teams.away.name"], "원정팀"),
-      status: mapStatus(statusCode),
-      homeScore: homeGoals != null ? Number(homeGoals) : undefined,
-      awayScore: awayGoals != null ? Number(awayGoals) : undefined
+      date: kst.getUTCFullYear() + "-" + pad(kst.getUTCMonth() + 1) + "-" + pad(kst.getUTCDate()),
+      time: pad(kst.getUTCHours()) + ":" + pad(kst.getUTCMinutes())
     };
   }
 
-  function mapGenericGame(raw, sport, leagueLabel, scorePath) {
-    console.log("[live-data] " + sport + " raw sample", raw);
-    var statusCode = pick(raw, ["status.short", "status"], "NS");
-    var homeScore = pick(raw, scorePath.home, null);
-    var awayScore = pick(raw, scorePath.away, null);
-    var dateStr = pick(raw, ["date", "fixture.date"], "");
+  // TheSportsDB의 strStatus는 종목/리그마다 표기가 조금씩 달라요(best-effort).
+  var SPORTSDB_LIVE_HINTS = ["1H", "2H", "LIVE", "IN PROGRESS", "HT", "Q1", "Q2", "Q3", "Q4"];
+  var SPORTSDB_FINISHED_HINTS = ["FT", "MATCH FINISHED", "FINISHED", "AOT", "AET", "FT-PEN"];
+
+  function mapSportsDbStatus(raw) {
+    var status = (raw.strStatus || "").toUpperCase().trim();
+    var hasScore = raw.intHomeScore !== null && raw.intHomeScore !== undefined &&
+                   raw.intAwayScore !== null && raw.intAwayScore !== undefined;
+    if (SPORTSDB_FINISHED_HINTS.indexOf(status) !== -1) return "finished";
+    if (SPORTSDB_LIVE_HINTS.indexOf(status) !== -1) return "live";
+    if (status === "" && hasScore) return "finished"; // 지난 경기 조회는 보통 상태값이 비어있어요
+    if (status === "NS" || status === "") return "scheduled";
+    return "scheduled";
+  }
+
+  function mapSportsDbEvent(raw, matchdaySport, label) {
+    console.log("[live-data] " + matchdaySport + " (TheSportsDB) raw sample", raw);
+    var kst = toKst(raw.dateEvent, raw.strTime, raw.strTimestamp);
+    var homeScore = raw.intHomeScore !== null && raw.intHomeScore !== undefined ? Number(raw.intHomeScore) : undefined;
+    var awayScore = raw.intAwayScore !== null && raw.intAwayScore !== undefined ? Number(raw.intAwayScore) : undefined;
     return {
-      id: "live-" + sport.slice(0, 2) + "-" + pick(raw, ["id"], Math.random()),
-      date: (dateStr + "").slice(0, 10),
-      time: pick(raw, ["time"], (dateStr + "").slice(11, 16)),
-      sport: sport,
-      league: leagueLabel,
-      venue: pick(raw, ["venue", "arena.name"], ""),
-      home: pick(raw, ["teams.home.name"], "홈팀"),
-      away: pick(raw, ["teams.away.name"], "원정팀"),
-      status: mapStatus(statusCode),
-      homeScore: homeScore != null ? Number(homeScore) : undefined,
-      awayScore: awayScore != null ? Number(awayScore) : undefined
+      id: "live-sdb-" + raw.idEvent,
+      date: kst.date,
+      time: kst.time,
+      sport: matchdaySport,
+      league: label,
+      venue: raw.strVenue || "",
+      home: raw.strHomeTeam || "홈팀",
+      away: raw.strAwayTeam || "원정팀",
+      status: mapSportsDbStatus(raw),
+      homeScore: homeScore,
+      awayScore: awayScore
     };
   }
 
   // ---------------- 공용: 종목 하나를 (여러 리그 포함해서) 불러오기 ----------------
-  // apiSport: worker.js/vercel-proxy가 아는 이름 ("football","baseball","basketball","volleyball")
-  // matchdaySport: 사이트가 아는 이름 ("soccer","baseball","basketball","volleyball")
-  // path: "fixtures"(축구) 또는 "games"(그 외)
-  // mapper: (raw, label) => MATCHES 형식 객체
+  // TheSportsDB는 날짜별로 반복 조회할 필요 없이, 리그당 "다음 경기들"과
+  // "지난 경기들"을 한 번씩만 불러오면 돼요 (요청 횟수가 훨씬 적어요).
 
-  function loadSport(apiSport, matchdaySport, path, mapper) {
-    var leagues = LEAGUES[matchdaySport] || [];
-    leagues = leagues.filter(function (lg) { return lg && lg.id; });
+  function loadSportFromSportsDb(matchdaySport) {
+    var leagues = (LEAGUES[matchdaySport] || []).filter(function (lg) { return lg && lg.id; });
     if (!leagues.length) {
       console.info("[live-data] LEAGUES." + matchdaySport + "이 비어 있어 이 종목은 예시 데이터를 유지합니다.");
       return;
     }
-    var dates = dateRange();
     var calls = [];
     leagues.forEach(function (lg) {
-      dates.forEach(function (d) {
-        calls.push(
-          proxyFetch(apiSport, path, { date: d, league: lg.id, season: lg.season || SEASON }).then(function (r) {
-            return { r: r, label: lg.label };
-          })
-        );
-      });
+      calls.push(sportsdbFetch("/eventsnextleague.php", { id: lg.id }).then(function (r) { return { r: r, label: lg.label }; }));
+      calls.push(sportsdbFetch("/eventspastleague.php", { id: lg.id }).then(function (r) { return { r: r, label: lg.label }; }));
     });
     Promise.all(calls).then(function (results) {
       var matches = [];
+      var seen = {};
       results.forEach(function (item) {
-        var r = item.r;
-        if (!r || !Array.isArray(r.response)) return;
-        r.response.forEach(function (raw) {
-          matches.push(mapper(raw, item.label));
+        var events = item.r && Array.isArray(item.r.events) ? item.r.events : [];
+        events.forEach(function (raw) {
+          if (!raw || seen[raw.idEvent]) return;
+          seen[raw.idEvent] = true;
+          matches.push(mapSportsDbEvent(raw, matchdaySport, item.label));
         });
       });
       if (matches.length) window.MATCHDAY.setSportMatches(matchdaySport, matches);
+      else console.info("[live-data] " + matchdaySport + ": TheSportsDB에서 가져온 경기가 없어요 (예시 데이터 유지).");
     });
   }
 
-  function loadFootball() {
-    loadSport("football", "soccer", "fixtures", mapFootballFixture);
-  }
-
-  function loadBaseball() {
-    loadSport("baseball", "baseball", "games", function (raw, label) {
-      return mapGenericGame(raw, "baseball", label, {
-        home: ["scores.home.total", "scores.home"],
-        away: ["scores.away.total", "scores.away"]
-      });
-    });
-  }
-
-  function loadBasketball() {
-    loadSport("basketball", "basketball", "games", function (raw, label) {
-      return mapGenericGame(raw, "basketball", label, {
-        home: ["scores.home.total", "scores.home"],
-        away: ["scores.away.total", "scores.away"]
-      });
-    });
-  }
-
-  function loadVolleyball() {
-    loadSport("volleyball", "volleyball", "games", function (raw, label) {
-      return mapGenericGame(raw, "volleyball", label, {
-        home: ["scores.home.total", "scores.home"],
-        away: ["scores.away.total", "scores.away"]
-      });
-    });
-  }
+  function loadFootball() { loadSportFromSportsDb("soccer"); }
+  function loadBaseball() { loadSportFromSportsDb("baseball"); }
+  function loadBasketball() { loadSportFromSportsDb("basketball"); }
+  function loadVolleyball() { loadSportFromSportsDb("volleyball"); }
 
   // ---------------- F1: OpenF1 (키 불필요, 프록시 불필요) ----------------
   // openf1.org 공식 문서 기준 필드명 사용 (meetings/sessions/session_result/drivers).
