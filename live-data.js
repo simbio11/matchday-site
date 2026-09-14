@@ -42,8 +42,15 @@
 
   // 종목별로 여러 리그를 넣을 수 있어요. 전부 실제 id로 호출해서 2026년 현재
   // 시즌 경기가 나오는 걸 확인한 번호예요.
+  // 축구는 K리그1에 이어 해외 리그(EPL)도 같이 가져와요. EPL id(4328)는
+  // TheSportsDB에서 실제로 호출해서 2026년 현재 시즌 경기가 나오는 걸
+  // 확인한 번호예요. 다만 TheSportsDB 쪽 팀 소속 정보가 가끔 최신이 아닐 수
+  // 있어요(예: 승격/강등 직후) — 콘솔의 raw sample로 이상 여부를 확인해주세요.
   var LEAGUES = {
-    soccer: [ { id: 4689, label: "K리그1" } ],
+    soccer: [
+      { id: 4689, label: "K리그1" },
+      { id: 4328, label: "EPL" }
+    ],
     baseball: [ { id: 4830, label: "KBO" } ],
     basketball: [ { id: 5124, label: "KBL" } ],
     volleyball: [
@@ -51,6 +58,10 @@
       { id: 5756, label: "V리그(여)" }
     ]
   };
+
+  // F1: 오늘로부터 이 범위(일) 안에 있는 세션만 화면에 반영해요.
+  var DAYS_BEFORE = 14;
+  var DAYS_AFTER = 21;
 
   // (참고) 예전엔 api-sports.io + Vercel 프록시(vercel-proxy 폴더)를 썼는데,
   // 무료 플랜이 "현재 시즌 데이터 접근 불가"(2022~2024년 과거 시즌만 허용)라서
@@ -226,8 +237,10 @@
           });
         }
 
-        // 종료된 세션은 session_result + drivers로 상위 2명을 찾아 home/away에 넣어요
-        // (매치데이 사이트의 모터스포츠 표기 방식에 맞춘 것으로, 실제 "대결"은 아니에요).
+        // 종료된 세션은 session_result + drivers로 전체 완주 순위표(raceResults)를
+        // 만들어요. home/away/homeScore/awayScore는 목록/캘린더 화면에서 쓰는
+        // 예전 방식(상위 2명) 그대로 남겨두지만, 상세 화면은 이제 raceResults를
+        // 우선 사용해서 실제 순위표 형태로 보여줘요 (renderPreviewFor 참고).
         return Promise.all([
           openf1("/session_result", { session_key: s.session_key }),
           openf1("/drivers", { session_key: s.session_key })
@@ -235,11 +248,26 @@
           var results = r[0] || [], drivers = r[1] || [];
           console.log("[live-data] openf1 session_result raw sample", results[0]);
           results.sort(function (a, b) { return (a.position || 99) - (b.position || 99); });
+          function teamFor(driverNumber) {
+            var d = drivers.filter(function (x) { return x.driver_number === driverNumber; })[0];
+            return d ? d.team_name : "";
+          }
           function nameFor(driverNumber) {
             var d = drivers.filter(function (x) { return x.driver_number === driverNumber; })[0];
             return d ? d.full_name : ("#" + driverNumber);
           }
           var top1 = results[0], top2 = results[1];
+          var raceResults = results.slice(0, 10).map(function (row, idx) {
+            var gapText = "";
+            if (idx === 0) gapText = "우승";
+            else if (row.gap_to_leader !== undefined && row.gap_to_leader !== null) gapText = "+" + row.gap_to_leader;
+            return {
+              position: row.position || (idx + 1),
+              name: nameFor(row.driver_number),
+              team: teamFor(row.driver_number),
+              gap: gapText
+            };
+          });
           return {
             id: "live-f1-" + s.session_key,
             date: (s.date_start || "").slice(0, 10),
@@ -251,7 +279,8 @@
             away: top2 ? nameFor(top2.driver_number) : (s.session_name || ""),
             status: "finished",
             homeScore: top1 ? top1.position : undefined,
-            awayScore: top2 ? top2.position : undefined
+            awayScore: top2 ? top2.position : undefined,
+            raceResults: raceResults
           };
         });
       })).then(function (matches) {

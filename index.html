@@ -344,6 +344,23 @@
   .h2h-row .h2h-team.win{ color:var(--text); font-weight:800; }
   .h2h-row .h2h-score{ font-weight:800; padding:0 4px; }
 
+  .race-section{ margin-top:6px; }
+  .race-list{ display:flex; flex-direction:column; gap:5px; }
+  .race-row{
+    display:grid; grid-template-columns:30px 1fr auto; align-items:center; gap:10px;
+    background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:8px 12px; font-size:12.5px;
+  }
+  .race-row.podium{ border-color:var(--motorsport); }
+  .race-pos{
+    width:22px; height:22px; border-radius:6px; background:var(--border); color:var(--text-dim);
+    font-weight:800; font-size:11px; display:flex; align-items:center; justify-content:center;
+  }
+  .race-row.podium .race-pos{ background:var(--motorsport); color:#fff; }
+  .race-driver{ display:flex; flex-direction:column; overflow:hidden; }
+  .race-driver .rd-name{ font-weight:800; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .race-driver .rd-team{ font-size:10.5px; color:var(--text-faint); font-weight:600; }
+  .race-gap{ font-weight:700; color:var(--text-dim); font-size:11.5px; white-space:nowrap; }
+
   .highlights-section{ margin-top:18px; }
   .highlights-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
   .highlights-list li{
@@ -550,12 +567,17 @@
       <div class="fs-score num"><span id="fsHome"></span><span class="fs-sep">-</span><span id="fsAway"></span></div>
     </div>
 
+    <div class="race-section" id="raceSection" hidden>
+      <div class="odds-head"><span class="t" id="raceSectionTag">레이스 결과</span></div>
+      <div class="race-list" id="raceList"></div>
+    </div>
+
     <div class="prob-bar" id="probBar"></div>
     <div class="prob-labels" id="probLabels"></div>
 
     <div id="statRows"></div>
 
-    <div class="stat-row">
+    <div class="stat-row" id="formRow">
       <span class="val home num" id="pvFormHomeLabel"></span>
       <div class="form-dots home" id="pvFormHome"></div>
       <span class="label">최근 5경기</span>
@@ -757,7 +779,14 @@
     { id:"f10", date:"2026-09-13", sport:"motorsport", league:"F1", time:"22:00", venue:"몬자 서킷", home:"막스 페르스타펜", away:"란도 노리스", status:"finished", homeScore:1, awayScore:2,
       recap:"막스 페르스타펜이 이탈리아 그랑프리에서 우승하며 시즌 포인트 선두를 지켰어요. 폴포지션에서 출발해 처음부터 끝까지 선두를 놓치지 않았고, 란도 노리스가 마지막 랩까지 추격했지만 0.8초 차로 우승을 놓쳤어요.",
       highlights:["페르스타펜 폴투윈 완주", "노리스 마지막 랩 추격 실패(0.8초 차)", "샤를 르클레르 홈 그랑프리 3위"],
-      players:[{name:"막스 페르스타펜", team:"레드불", note:"이번 시즌 6번째 우승으로 포인트 선두 유지"}] },
+      players:[{name:"막스 페르스타펜", team:"레드불", note:"이번 시즌 6번째 우승으로 포인트 선두 유지"}],
+      raceResults:[
+        { position:1, name:"막스 페르스타펜", team:"레드불", gap:"우승" },
+        { position:2, name:"란도 노리스", team:"맥라렌", gap:"+0.8초" },
+        { position:3, name:"샤를 르클레르", team:"페라리", gap:"+6.2초" },
+        { position:4, name:"오스카 피아스트리", team:"맥라렌", gap:"+11.4초" },
+        { position:5, name:"루이스 해밀턴", team:"페라리", gap:"+18.9초" }
+      ] },
     { id:"f11", date:"2026-09-10", sport:"fighting", league:"UFC", time:"12:00", venue:"T-모바일 아레나", home:"이스라엘 아데산야", away:"알렉스 페레이라", status:"finished", homeScore:1, awayScore:0,
       recap:"이스라엘 아데산야가 3라운드 KO로 알렉스 페레이라를 꺾으며 통산 라이벌전 전적을 만회했어요. 1~2라운드는 팽팽했지만 3라운드 초반 정확한 카운터 펀치로 상대를 다운시키며 경기를 끝냈어요.",
       highlights:["1~2라운드 팽팽한 타격전", "3라운드 초반 카운터 펀치 다운", "레퍼리 스톱으로 KO 승 선언"],
@@ -1305,17 +1334,44 @@
     }
 
     var isFinished = m.status === "finished";
-    document.getElementById("finalScoreBox").hidden = !isFinished;
-    document.getElementById("probBar").hidden = isFinished;
-    document.getElementById("probLabels").hidden = isFinished;
-    document.getElementById("bettingSection").hidden = isFinished;
+    var isMotorsport = m.sport === "motorsport";
 
-    if(isFinished){
+    document.getElementById("finalScoreBox").hidden = !isFinished || isMotorsport;
+    document.getElementById("probBar").hidden = isFinished || isMotorsport;
+    document.getElementById("probLabels").hidden = isFinished || isMotorsport;
+    document.getElementById("bettingSection").hidden = isFinished || isMotorsport;
+    document.getElementById("statRows").hidden = isMotorsport;
+    document.getElementById("formRow").hidden = isMotorsport;
+
+    // 모터스포츠(F1)는 20명이 겨루는 레이스라 다른 종목처럼 "1:1 대결"
+    // 스코어/승패폼/상대전적 형태로 보여주는 게 어색해요. 그래서 레이스는
+    // 스코어·확률바·베팅·최근폼 UI를 다 걷어내고, 실제 완주 순위표(또는
+    // 출발 예정 세션 정보)를 대신 보여줘요.
+    var raceSection = document.getElementById("raceSection");
+    if(isMotorsport){
+      var results = (p.raceResults && p.raceResults.length) ? p.raceResults : (m.raceResults || []);
+      raceSection.hidden = !results.length;
+      document.getElementById("raceSectionTag").textContent = isFinished ? "레이스 결과" : "세션 정보";
+      var raceHost = document.getElementById("raceList");
+      raceHost.innerHTML = "";
+      results.forEach(function(r, idx){
+        var row = el("div","race-row" + (r.position <= 3 ? " podium" : ""));
+        row.innerHTML =
+          '<span class="race-pos">' + (r.position || (idx+1)) + '</span>' +
+          '<div class="race-driver"><span class="rd-name">' + r.name + '</span>' + (r.team ? '<span class="rd-team">' + r.team + '</span>' : '') + '</div>' +
+          '<span class="race-gap">' + (r.gap || "") + '</span>';
+        raceHost.appendChild(row);
+      });
+    } else {
+      raceSection.hidden = true;
+    }
+
+    if(isFinished && !isMotorsport){
       document.getElementById("fsHome").textContent = m.homeScore;
       document.getElementById("fsAway").textContent = m.awayScore;
     }
 
-    if(!isFinished){
+    if(!isFinished && !isMotorsport){
       var bar = document.getElementById("probBar"), labels = document.getElementById("probLabels");
       var segs = [
         { val:p.prob.home, color:"var(--soccer)", text:m.home },
@@ -1359,7 +1415,7 @@
         '<span class="h2h-team' + (aw?' win':'') + '">' + g.away + '</span>';
       h2hHost.appendChild(row);
     });
-    document.getElementById("h2hSection").hidden = !(p.h2h && p.h2h.length);
+    document.getElementById("h2hSection").hidden = isMotorsport || !(p.h2h && p.h2h.length);
 
     // Players — always shown, label changes by status
     document.getElementById("playersTag").textContent = isFinished ? "주요 선수" : "주목할 선수";
@@ -1393,9 +1449,11 @@
     });
 
     // Community prediction sentiment (simulated) + personal vote
-    renderCommunity(m, p);
+    // — 모터스포츠는 홈/무/원정 구도가 아니라서 이 커뮤니티 예측 UI가 안 맞아요, 숨겨요.
+    document.getElementById("communitySection").hidden = isMotorsport;
+    if(!isMotorsport) renderCommunity(m, p);
 
-    if(!isFinished){
+    if(!isFinished && !isMotorsport){
       // odds
       var odds = computeOdds(p.prob);
       currentOdds = odds;
