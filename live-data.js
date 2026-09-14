@@ -37,8 +37,14 @@
 
   // TheSportsDB 무료 공개 테스트 키예요(회원가입 불필요, 공식 문서에 명시된 값이라
   // 숨길 필요가 없어요). 분당 30회 제한이 있어서 너무 자주 새로고침하면 막힐 수 있어요.
+  // ⚠️ 이 줄은 "123"이라는 짧은 값 그대로 둬야 해요! Vercel 주소를 넣는 곳이
+  // 아니에요 — Vercel 주소는 훨씬 아래에 있는 ESPORTS_WORKER_BASE에 넣어주세요.
   var SPORTSDB_KEY = "123";
   var SPORTSDB_BASE = "https://www.thesportsdb.com/api/v1/json/" + SPORTSDB_KEY;
+  if (SPORTSDB_KEY.indexOf("http") !== -1) {
+    console.error("[live-data] SPORTSDB_KEY에 주소(URL)가 들어가 있어요! 이 값은 \"123\" 그대로 둬야 해요. " +
+      "Vercel 주소는 이 파일 아래쪽 ESPORTS_WORKER_BASE 줄에 넣어주세요.");
+  }
 
   // 종목별로 여러 리그를 넣을 수 있어요. 전부 실제 id로 호출해서 2026년 현재
   // 시즌 경기가 나오는 걸 확인한 번호예요.
@@ -51,8 +57,8 @@
       { id: 4689, label: "K리그1" },
       { id: 4328, label: "EPL" }
     ],
-    baseball: [ { id: 4830, label: "KBO" } ],
-    basketball: [ { id: 5124, label: "KBL" } ],
+    baseball: [{ id: 4830, label: "KBO" }],
+    basketball: [{ id: 5124, label: "KBL" }],
     volleyball: [
       { id: 5757, label: "V리그(남)" },
       { id: 5756, label: "V리그(여)" }
@@ -75,7 +81,7 @@
   // /api/esports/... 프록시를 거쳐서 불러와요. 아래에 Vercel 배포 주소를 넣어야
   // 동작해요 (예: "https://matchdayvercel.vercel.app"). 비어있으면 조용히 건너뛰고
   // 예시 데이터가 그대로 유지돼요.
-  var ESPORTS_WORKER_BASE = "";
+  var ESPORTS_WORKER_BASE = "https://matchdayvercel.vercel.app";
 
   function proxyFetch(sport, path, params) {
     if (!WORKER_BASE) return Promise.resolve(null);
@@ -130,7 +136,7 @@
   function mapSportsDbStatus(raw) {
     var status = (raw.strStatus || "").toUpperCase().trim();
     var hasScore = raw.intHomeScore !== null && raw.intHomeScore !== undefined &&
-                   raw.intAwayScore !== null && raw.intAwayScore !== undefined;
+      raw.intAwayScore !== null && raw.intAwayScore !== undefined;
     if (SPORTSDB_FINISHED_HINTS.indexOf(status) !== -1) return "finished";
     if (SPORTSDB_LIVE_HINTS.indexOf(status) !== -1) return "live";
     if (status === "" && hasScore) return "finished"; // 지난 경기 조회는 보통 상태값이 비어있어요
@@ -162,7 +168,7 @@
   // TheSportsDB는 날짜별로 반복 조회할 필요 없이, 리그당 "다음 경기들"과
   // "지난 경기들"을 한 번씩만 불러오면 돼요 (요청 횟수가 훨씬 적어요).
 
-  function markLoadDone(sport){
+  function markLoadDone(sport) {
     // index.html의 화면이 "불러오는 중…" 표시를 언제까지나 띄워두지 않도록,
     // 이 종목에 대한 시도가 끝났다는 걸(성공이든 실패든) 알려줘요.
     if (window.MATCHDAY && typeof window.MATCHDAY.setLoading === "function") {
@@ -233,15 +239,24 @@
         return t >= windowStart && t <= windowEnd;
       });
 
-      Promise.all(relevant.map(function (s) {
+      // ⚠️ OpenF1은 무료지만 요청이 너무 몰리면 429(Too Many Requests)를 내요.
+      // 예전엔 이 기간 안의 "끝난 세션"마다(연습주행/퀄리파잉/스프린트/본선까지
+      // 전부) session_result+drivers를 동시에 한꺼번에 불러왔는데, 주말 하나에
+      // 세션이 5~7개라 며칠만 겹쳐도 순식간에 요청이 20~30개씩 나가서 막혔어요.
+      // 그래서 전체 완주 순위표는 "본선(Race)" 세션에만 만들고, 나머지(연습/퀄리)는
+      // 그냥 "종료"로만 표시해요 — 실제로도 순위표가 의미 있는 건 본선이에요.
+      var results0 = [];
+      var toFetchDetail = [];
+      relevant.forEach(function (s) {
         var status = "scheduled";
         var startT = new Date(s.date_start).getTime();
         var endT = new Date(s.date_end).getTime();
         if (now >= startT && now <= endT) status = "live";
         else if (now > endT) status = "finished";
 
-        if (status !== "finished") {
-          return Promise.resolve({
+        var isRace = (s.session_name || "").toLowerCase().indexOf("race") !== -1;
+        if (status !== "finished" || !isRace) {
+          results0.push(Promise.resolve({
             id: "live-f1-" + s.session_key,
             date: (s.date_start || "").slice(0, 10),
             time: (s.date_start || "").slice(11, 16),
@@ -251,18 +266,24 @@
             home: s.meeting_key ? (s.session_name || "세션") : "F1",
             away: s.circuit_short_name || s.location || "",
             status: status
-          });
+          }));
+        } else {
+          toFetchDetail.push(s);
         }
+      });
 
-        // 종료된 세션은 session_result + drivers로 전체 완주 순위표(raceResults)를
-        // 만들어요. home/away/homeScore/awayScore는 목록/캘린더 화면에서 쓰는
-        // 예전 방식(상위 2명) 그대로 남겨두지만, 상세 화면은 이제 raceResults를
-        // 우선 사용해서 실제 순위표 형태로 보여줘요 (renderPreviewFor 참고).
+      // 본선 세션들은 동시에 다 쏘지 않고 하나씩 순서대로(약간의 간격을 두고)
+      // 불러와서 요청이 한꺼번에 몰리지 않게 해요.
+      function fetchRaceDetail(s) {
         return Promise.all([
           openf1("/session_result", { session_key: s.session_key }),
           openf1("/drivers", { session_key: s.session_key })
         ]).then(function (r) {
-          var results = r[0] || [], drivers = r[1] || [];
+          // OpenF1이 요청 제한(429) 등으로 배열이 아닌 응답(에러 객체 등)을 줄 수도
+          // 있어서, 배열인지 꼭 확인하고 아니면 빈 배열로 처리해요(그래야 아래
+          // sort()가 죽지 않아요).
+          var results = Array.isArray(r[0]) ? r[0] : [];
+          var drivers = Array.isArray(r[1]) ? r[1] : [];
           console.log("[live-data] openf1 session_result raw sample", results[0]);
           results.sort(function (a, b) { return (a.position || 99) - (b.position || 99); });
           function teamFor(driverNumber) {
@@ -299,9 +320,27 @@
             awayScore: top2 ? top2.position : undefined,
             raceResults: raceResults
           };
+        }).catch(function () { return null; });
+      }
+
+      // toFetchDetail(본선 세션들)을 하나씩, 300ms 간격을 두고 순서대로 불러와요.
+      function runSequentially(list, idx, acc) {
+        if (idx >= list.length) return Promise.resolve(acc);
+        return fetchRaceDetail(list[idx]).then(function (r) {
+          if (r) acc.push(r);
+          return new Promise(function (resolve) { setTimeout(resolve, 300); }).then(function () {
+            return runSequentially(list, idx + 1, acc);
+          });
         });
-      })).then(function (matches) {
+      }
+
+      Promise.all(results0).then(function (baseMatches) {
+        return runSequentially(toFetchDetail, 0, []).then(function (raceMatches) {
+          return baseMatches.concat(raceMatches);
+        });
+      }).then(function (matches) {
         if (matches.length) window.MATCHDAY.setSportMatches("motorsport", matches.filter(Boolean));
+        else console.info("[live-data] motorsport: 이 기간엔 표시할 F1 세션이 없어요.");
         markLoadDone("motorsport");
       }).catch(function () { markLoadDone("motorsport"); });
     }).catch(function () { markLoadDone("motorsport"); });
