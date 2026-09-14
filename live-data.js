@@ -37,7 +37,7 @@
 
   // TheSportsDB 무료 공개 테스트 키예요(회원가입 불필요, 공식 문서에 명시된 값이라
   // 숨길 필요가 없어요). 분당 30회 제한이 있어서 너무 자주 새로고침하면 막힐 수 있어요.
-  var SPORTSDB_KEY = "123";
+  var SPORTSDB_KEY = "https://matchdayvercel.vercel.app";
   var SPORTSDB_BASE = "https://www.thesportsdb.com/api/v1/json/" + SPORTSDB_KEY;
 
   // 종목별로 여러 리그를 넣을 수 있어요. 전부 실제 id로 호출해서 2026년 현재
@@ -51,8 +51,8 @@
       { id: 4689, label: "K리그1" },
       { id: 4328, label: "EPL" }
     ],
-    baseball: [ { id: 4830, label: "KBO" } ],
-    basketball: [ { id: 5124, label: "KBL" } ],
+    baseball: [{ id: 4830, label: "KBO" }],
+    basketball: [{ id: 5124, label: "KBL" }],
     volleyball: [
       { id: 5757, label: "V리그(남)" },
       { id: 5756, label: "V리그(여)" }
@@ -69,6 +69,13 @@
   // 다시 쓸 수 있어서 코드는 남겨뒀어요 — 지금은 아래 WORKER_BASE가 비어 있으면
   // 그냥 조용히 건너뛰어요.
   var WORKER_BASE = "";
+
+  // e스포츠(LCK)는 PandaScore API를 쓰는데, PandaScore는 브라우저 직접 호출을
+  // 막아놔서(CORS 미지원 + 키를 클라이언트에 노출하면 안 됨) vercel-proxy 폴더의
+  // /api/esports/... 프록시를 거쳐서 불러와요. 아래에 Vercel 배포 주소를 넣어야
+  // 동작해요 (예: "https://matchdayvercel.vercel.app"). 비어있으면 조용히 건너뛰고
+  // 예시 데이터가 그대로 유지돼요.
+  var ESPORTS_WORKER_BASE = "";
 
   function proxyFetch(sport, path, params) {
     if (!WORKER_BASE) return Promise.resolve(null);
@@ -123,7 +130,7 @@
   function mapSportsDbStatus(raw) {
     var status = (raw.strStatus || "").toUpperCase().trim();
     var hasScore = raw.intHomeScore !== null && raw.intHomeScore !== undefined &&
-                   raw.intAwayScore !== null && raw.intAwayScore !== undefined;
+      raw.intAwayScore !== null && raw.intAwayScore !== undefined;
     if (SPORTSDB_FINISHED_HINTS.indexOf(status) !== -1) return "finished";
     if (SPORTSDB_LIVE_HINTS.indexOf(status) !== -1) return "live";
     if (status === "" && hasScore) return "finished"; // 지난 경기 조회는 보통 상태값이 비어있어요
@@ -289,6 +296,79 @@
     });
   }
 
+  // ---------------- e스포츠(LCK, PandaScore) ----------------
+
+  function esportsFetch(path, params) {
+    if (!ESPORTS_WORKER_BASE) return Promise.resolve(null);
+    var qs = new URLSearchParams(params || {}).toString();
+    var url = ESPORTS_WORKER_BASE.replace(/\/$/, "") + "/api/esports/" + path + (qs ? "?" + qs : "");
+    return fetch(url)
+      .then(function (res) { return res.json(); })
+      .catch(function (e) {
+        console.warn("[live-data] esports 요청 실패 (" + url + ")", e);
+        return null;
+      });
+  }
+
+  var ESPORTS_STATUS_MAP = { not_started: "scheduled", running: "live", finished: "finished", postponed: "scheduled", canceled: "finished" };
+
+  function mapEsportsMatch(raw) {
+    console.log("[live-data] esports (PandaScore) raw sample", raw);
+    var kst = toKst(null, null, raw.begin_at || raw.scheduled_at);
+    var opp = raw.opponents || [];
+    var home = opp[0] && opp[0].opponent ? opp[0].opponent.name : "TBD";
+    var away = opp[1] && opp[1].opponent ? opp[1].opponent.name : "TBD";
+    var homeScore, awayScore;
+    if (Array.isArray(raw.results) && raw.results.length >= 2 && opp[0] && opp[1]) {
+      var homeId = opp[0].opponent && opp[0].opponent.id;
+      var awayId = opp[1].opponent && opp[1].opponent.id;
+      var homeRow = raw.results.filter(function (r) { return r.team_id === homeId; })[0];
+      var awayRow = raw.results.filter(function (r) { return r.team_id === awayId; })[0];
+      if (homeRow) homeScore = homeRow.score;
+      if (awayRow) awayScore = awayRow.score;
+    }
+    return {
+      id: "live-lck-" + raw.id,
+      date: kst.date, time: kst.time,
+      sport: "esports", league: "LCK",
+      venue: (raw.league && raw.league.name) || "",
+      home: home, away: away,
+      status: ESPORTS_STATUS_MAP[raw.status] || "scheduled",
+      homeScore: homeScore, awayScore: awayScore
+    };
+  }
+
+  function loadEsports() {
+    if (!ESPORTS_WORKER_BASE) {
+      console.info("[live-data] esports: ESPORTS_WORKER_BASE가 비어 있어서 건너뛰어요 (예시 데이터 유지).");
+      return;
+    }
+    // LCK 리그 id를 먼저 찾아요 (하드코딩하지 않고 매번 이름으로 검색 — PandaScore
+    // 쪽 id가 바뀌더라도 계속 정확하게 동작해요).
+    esportsFetch("lol/leagues", { "search[name]": "LCK" }).then(function (leagues) {
+      console.log("[live-data] esports LCK leagues raw sample", leagues);
+      if (!Array.isArray(leagues) || !leagues.length) {
+        console.info("[live-data] esports: LCK 리그를 못 찾았어요 (예시 데이터 유지).");
+        return;
+      }
+      var leagueId = leagues[0].id;
+      var filterParams = { "filter[league_id]": leagueId, "per_page": 20 };
+      Promise.all([
+        esportsFetch("lol/matches/upcoming", filterParams),
+        esportsFetch("lol/matches/past", filterParams),
+        esportsFetch("lol/matches/running", filterParams)
+      ]).then(function (results) {
+        var matches = [];
+        results.forEach(function (arr) {
+          if (!Array.isArray(arr)) return;
+          arr.forEach(function (raw) { matches.push(mapEsportsMatch(raw)); });
+        });
+        if (matches.length) window.MATCHDAY.setSportMatches("esports", matches);
+        else console.info("[live-data] esports: LCK 경기를 못 가져왔어요 (예시 데이터 유지).");
+      });
+    });
+  }
+
   // ---------------- 시작 ----------------
 
   window.addEventListener("load", function () {
@@ -301,6 +381,7 @@
     loadBasketball();
     loadVolleyball();
     loadF1(); // 키 불필요 — WORKER_BASE 설정과 무관하게 항상 시도해요.
+    loadEsports(); // ESPORTS_WORKER_BASE를 채워야 동작해요 (README 참고).
     // UFC/격투기(MMA)는 필요하시면 이어서 추가해드릴게요 (league/organization
     // 파라미터 이름을 api-sports.io MMA 문서에서 먼저 확인해야 정확히 짤 수 있어요).
   });
