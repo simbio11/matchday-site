@@ -31,7 +31,7 @@
 
   // 1) worker.js를 Cloudflare Workers에 배포하면 생기는 주소로 바꿔주세요.
   //    예) "https://matchday-proxy.your-subdomain.workers.dev"
-  var WORKER_BASE = ""; // 예: "https://matchday-proxy.xxxx.workers.dev"
+  var WORKER_BASE = "https://matchday-proxy.cmkschcmksch.workers.dev"; // 예: "https://matchday-proxy.xxxx.workers.dev"
 
   // 2) api-sports.io 가입 후 "Leagues" 검색으로 확인한 리그 번호를 넣어주세요.
   //    (id를 모르면 null로 두세요 — 그 종목은 자동으로 건너뛰고 예시 데이터가 유지돼요.)
