@@ -371,7 +371,8 @@
 
   .players-section{ margin-top:18px; }
   .player-cards{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
-  .player-card{ background:var(--surface-2); border:1px solid var(--border); border-radius:12px; padding:11px 13px; }
+  .player-card{ background:var(--surface-2); border:1px solid var(--border); border-radius:12px; padding:11px 13px; display:block; text-decoration:none; cursor:pointer; transition:border-color .15s; }
+  .player-card:hover{ border-color:var(--accent2); }
   .player-card .p-name{ font-size:13.5px; font-weight:800; }
   .player-card .p-team{ font-size:10.5px; color:var(--accent2); font-weight:700; margin-top:1px; }
   .player-card .p-note{ font-size:12px; color:var(--text-dim); margin-top:6px; line-height:1.5; }
@@ -449,7 +450,7 @@
   .venue{ font-size:11px; color:var(--text-faint); }
 
   .news-list{ display:flex; flex-direction:column; gap:2px; }
-  .news-item{ display:block; padding:12px 4px; border-bottom:1px solid var(--border); }
+  .news-item{ display:block; padding:12px 4px; border-bottom:1px solid var(--border); text-decoration:none; color:inherit; cursor:pointer; }
   .news-item:last-child{ border-bottom:0; }
   .news-item .src{ font-size:11px; font-weight:800; color:var(--accent2); letter-spacing:.02em; }
   .news-item .headline{ font-size:14px; font-weight:700; margin-top:4px; line-height:1.45; }
@@ -507,7 +508,7 @@
 
   <div class="notice">
     <span class="dot"></span>
-    <span><b>예시 데이터로 구성된 페이지예요.</b> 실제 일정·배당률·통계 API를 연동하면 실시간 데이터로 바뀌어요. 모의 투자는 가상 포인트로만 진행돼요.</span>
+    <span><b>경기 일정·결과는 실제 API(TheSportsDB, OpenF1) 데이터예요.</b> 다만 배당률·승률(%)·커뮤니티 예측 경향·모의 투자는 실제 집계가 아니라 화면 구성을 위한 시뮬레이션 값이에요(경기당 고정된 계산식으로 생성, 실제 베팅업체나 여론조사 데이터 아님). 모의 투자는 가상 포인트로만 진행돼요.</span>
   </div>
 
   <div class="ticker-section">
@@ -586,8 +587,9 @@
     </div>
 
     <div class="analysis-box">
-      <span class="tag" id="analysisTag">전력 분석 요약</span>
+      <span class="tag" id="analysisTag">경기 정보</span>
       <p id="analysisText"></p>
+      <a class="watch-link" id="analysisNewsLink" href="#" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;">실제 기사 검색 ↗</a>
     </div>
 
     <div class="h2h-section" id="h2hSection" hidden>
@@ -710,150 +712,21 @@
   });
 
   // Unified match list. status: "scheduled" | "live" | "finished"
-  var MATCHES = [
-    { id:"s1", date:"2026-09-14", sport:"soccer", league:"K리그1", time:"19:00", venue:"서울월드컵경기장", home:"FC서울", away:"울산HD", status:"scheduled", previewId:"soccer1" },
-    { id:"s2", date:"2026-09-14", sport:"soccer", league:"K리그1", time:"19:30", venue:"전주월드컵경기장", home:"전북현대", away:"포항스틸러스", status:"scheduled" },
-    { id:"s3", date:"2026-09-14", sport:"soccer", league:"프리미어리그", time:"23:00", venue:"에미레이츠 스타디움", home:"아스널", away:"토트넘", status:"scheduled", previewId:"soccer2" },
-    { id:"s4", date:"2026-09-14", sport:"baseball", league:"KBO", time:"18:30", venue:"잠실야구장", home:"LG트윈스", away:"두산베어스", status:"live", homeScore:3, awayScore:2, inning:"7회초", previewId:"baseball1" },
-    { id:"s5", date:"2026-09-14", sport:"baseball", league:"KBO", time:"18:30", venue:"수원KT위즈파크", home:"KT위즈", away:"SSG랜더스", status:"scheduled" },
-    { id:"s6", date:"2026-09-14", sport:"baseball", league:"MLB", time:"09:05", venue:"다저 스타디움", home:"LA 다저스", away:"SF 자이언츠", status:"scheduled" },
-    { id:"s7", date:"2026-09-14", sport:"basketball", league:"KBL", time:"19:00", venue:"잠실학생체육관", home:"서울SK", away:"수원KT", note:"프리시즌", status:"scheduled" },
+  // ⚠️ 예전엔 여기에 실제 팀 이름 + 지어낸 스코어로 채운 '예시 경기' 목록이
+  // 있었어요. 페이지가 열리자마자 그게 화면에 보여서 진짜 경기처럼 오해할 수
+  // 있었고, 실시간 연동이 안 된 종목(격투기)은 계속 가짜 데이터만 보이는
+  // 문제도 있었어요. 그래서 완전히 비웠어요 — 지금은 live-data.js가 실제
+  // API에서 데이터를 가져오기 전까지 화면에 '불러오는 중' 표시가 나가고,
+  // 아직 연동되지 않은 종목(격투기 등)은 '아직 실시간 연동이 안 됐어요'라고
+  // 정직하게 표시돼요.
+  var MATCHES = [];
 
-    { id:"s8", date:"2026-09-15", sport:"soccer", league:"K리그1", time:"19:00", venue:"수원월드컵경기장", home:"수원FC", away:"강원FC", status:"scheduled" },
-    { id:"s9", date:"2026-09-15", sport:"baseball", league:"KBO", time:"18:30", venue:"고척스카이돔", home:"키움히어로즈", away:"NC다이노스", status:"scheduled" },
-    { id:"s10", date:"2026-09-15", sport:"basketball", league:"KBL", time:"19:00", venue:"안양체육관", home:"안양정관장", away:"고양소노", note:"프리시즌", status:"scheduled" },
 
-    { id:"s11", date:"2026-09-16", sport:"soccer", league:"프리미어리그", time:"04:00", venue:"올드트래포드", home:"맨체스터유나이티드", away:"첼시", status:"scheduled" },
-    { id:"s12", date:"2026-09-16", sport:"baseball", league:"MLB", time:"09:10", venue:"양키 스타디움", home:"뉴욕양키스", away:"토론토블루제이스", status:"scheduled" },
+  // ⚠️ 예전엔 여기도 지어낸 승점으로 채운 가짜 K리그1 순위표였어요. 실제
+  // 순위표 API 연동이 아직 안 돼 있어서 완전히 비워요 — renderStandings()가
+  // 비어있을 때 "아직 연동 안 됨"이라고 정직하게 보여줘요.
+  var STANDINGS = [];
 
-    { id:"s13", date:"2026-09-17", sport:"soccer", league:"K리그1", time:"19:30", venue:"창원축구센터", home:"경남FC", away:"대전하나시티즌", status:"scheduled" },
-    { id:"s14", date:"2026-09-17", sport:"baseball", league:"KBO", time:"18:30", venue:"대구삼성라이온즈파크", home:"삼성라이온즈", away:"한화이글스", status:"scheduled" },
-    { id:"s15", date:"2026-09-17", sport:"basketball", league:"KBL", time:"19:00", venue:"원주종합체육관", home:"원주DB", away:"부산KCC", note:"프리시즌", status:"scheduled" },
-
-    { id:"s16", date:"2026-09-18", sport:"soccer", league:"K리그1", time:"19:00", venue:"제주월드컵경기장", home:"제주유나이티드", away:"광주FC", status:"scheduled" },
-    { id:"s17", date:"2026-09-18", sport:"baseball", league:"KBO", time:"18:30", venue:"인천SSG랜더스필드", home:"SSG랜더스", away:"롯데자이언츠", status:"scheduled" },
-
-    { id:"s18", date:"2026-09-14", sport:"volleyball", league:"V리그", time:"19:00", venue:"대한항공 스포츠타운", home:"대한항공 점보스", away:"현대캐피탈 스카이워커스", status:"scheduled" },
-    { id:"s19", date:"2026-09-14", sport:"esports", league:"LCK", time:"17:00", venue:"LoL파크", home:"T1", away:"Gen.G", status:"live", homeScore:1, awayScore:1, inning:"3세트 진행중" },
-    { id:"s20", date:"2026-09-14", sport:"fighting", league:"UFC", time:"12:00", venue:"T-모바일 아레나", home:"이스라엘 아데산야", away:"알렉스 페레이라", status:"scheduled" },
-    { id:"s21", date:"2026-09-15", sport:"motorsport", league:"F1", time:"15:00", venue:"마리나 베이 서킷", home:"막스 페르스타펜", away:"샤를 르클레르", status:"scheduled" },
-    { id:"s22", date:"2026-09-16", sport:"volleyball", league:"V리그", time:"19:00", venue:"장충체육관", home:"우리카드 우리WON", away:"OK저축은행 러시앤캐시", status:"scheduled" },
-    { id:"s23", date:"2026-09-17", sport:"esports", league:"LCK", time:"17:00", venue:"LoL파크", home:"한화생명e스포츠", away:"KT 롤스터", status:"scheduled" },
-
-    { id:"f1", date:"2026-09-12", sport:"soccer", league:"K리그1", time:"19:00", venue:"탄천종합운동장", home:"성남FC", away:"김천상무", status:"finished", homeScore:1, awayScore:1,
-      recap:"성남FC가 후반 추가시간 극적인 동점골을 터뜨리며 김천상무와 1-1로 승부를 가르지 못했어요. 김천은 전반부터 높은 점유율로 경기를 지배했지만 결정력 부족이 아쉬웠고, 성남은 후반 교체 카드가 제대로 적중하며 승점 1점을 지켰어요. 두 팀 모두 중위권 경쟁에서 이번 무승부가 아쉬운 결과예요.",
-      highlights:["전반 34분 김천상무 선제골", "후반 45+2분 성남FC 극적 동점골", "성남FC 골키퍼 결정적 선방 3회"],
-      players:[{name:"이현일", team:"성남FC", note:"동점골을 성공시키며 팀 승점을 지킨 공격수"},{name:"조규성", team:"김천상무", note:"선제골과 함께 2개의 결정적 찬스를 만든 공격 포인트"}] },
-    { id:"f2", date:"2026-09-13", sport:"baseball", league:"KBO", time:"17:00", venue:"사직야구장", home:"롯데자이언츠", away:"삼성라이온즈", status:"finished", homeScore:3, awayScore:5,
-      recap:"삼성라이온즈가 선발 투수의 안정적인 피칭과 후반 집중타를 앞세워 롯데자이언츠 원정에서 5-3으로 승리했어요. 삼성은 6회 2점 홈런으로 균형을 깬 뒤 8회 쐐기점을 추가했고, 불펜진이 마지막까지 리드를 지켜냈어요. 롯데는 선발 투수가 5이닝 3실점으로 버텼지만 불펜 방화가 아쉬웠던 경기였어요.",
-      highlights:["6회초 삼성 2점 홈런으로 균형 붕괴", "8회초 삼성 쐐기 적시타", "삼성 마무리 투수 무실점 마무리"],
-      players:[{name:"구자욱", team:"삼성라이온즈", note:"결승 2루타를 포함해 3타수 2안타로 활약"},{name:"박세웅", team:"롯데자이언츠", note:"5이닝 3실점으로 선발 등판, 불펜 방화로 승리투수 무산"}] },
-    { id:"f3", date:"2026-09-13", sport:"basketball", league:"WKBL", time:"18:00", venue:"청주체육관", home:"청주KB", away:"부천하나", note:"프리시즌", status:"finished", homeScore:71, awayScore:66,
-      recap:"청주KB가 3쿼터 활발한 속공 전환으로 격차를 벌리며 부천하나를 71-66으로 눌렀어요. 3쿼터에만 12개의 속공 득점을 만들어내며 승부에 쐐기를 박았고, 새로 영입한 외국인 선수가 리바운드와 득점에서 고르게 활약했어요. 프리시즌이지만 시즌 개막을 앞두고 좋은 신호예요.",
-      highlights:["3쿼터 12-2 런으로 점수차 벌림", "새 외국인 선수 데뷔전 20득점 10리바운드", "4쿼터 자유투 9/10 성공"],
-      players:[{name:"신지현", team:"청주KB", note:"어시스트 8개로 공격을 조율한 가드"}] },
-    { id:"f4", date:"2026-09-11", sport:"soccer", league:"K리그1", time:"19:00", venue:"광주축구전용구장", home:"광주FC", away:"대구FC", status:"finished", homeScore:2, awayScore:1,
-      recap:"광주FC가 후반 결승골을 터뜨리며 대구FC를 2-1로 제압, 홈 3연승을 달렸어요. 전반 선제골을 내주며 끌려갔지만 후반 초반 페널티킥으로 동점을 만든 뒤, 후반 33분 역습 상황에서 결승골을 뽑아냈어요. 상위권 진입에 청신호가 켜진 경기였어요.",
-      highlights:["전반 12분 대구FC 선제골", "후반 6분 광주FC 페널티킥 동점골", "후반 33분 광주FC 역습 결승골"],
-      players:[{name:"허율", team:"광주FC", note:"결승골을 포함해 이번 시즌 8호골 기록"}] },
-    { id:"f5", date:"2026-09-13", sport:"soccer", league:"프리미어리그", time:"23:30", venue:"에티하드 스타디움", home:"맨체스터시티", away:"리버풀", status:"finished", homeScore:1, awayScore:1,
-      recap:"맨체스터시티와 리버풀이 팽팽한 우승 후보 맞대결 끝에 1-1로 비겼어요. 맨시티가 점유율에서 앞섰지만 리버풀의 조직적인 수비에 막혀 결정적인 찬스를 살리지 못했고, 후반 막판 세트피스 상황에서 실점하며 승점을 나눴어요. 양 팀 모두 선두 경쟁은 계속 이어가게 됐어요.",
-      highlights:["후반 28분 맨시티 선제골", "후반 41분 리버풀 코너킥 동점골", "종료 직전 리버풀 골키퍼 결정적 선방"],
-      players:[{name:"엘링 홀란", team:"맨체스터시티", note:"선제골을 기록하며 시즌 10호골 달성"},{name:"모하메드 살라", team:"리버풀", note:"동점골을 어시스트한 핵심 공격수"}] },
-    { id:"f6", date:"2026-09-13", sport:"baseball", league:"MLB", time:"09:05", venue:"양키 스타디움", home:"뉴욕양키스", away:"보스턴레드삭스", status:"finished", homeScore:5, awayScore:7,
-      recap:"보스턴레드삭스가 8회 대량득점으로 뉴욕양키스를 7-5로 꺾었어요. 양키스가 5회까지 5-2로 앞섰지만 8회초 보스턴 타선이 4점을 몰아치며 역전에 성공했고, 마무리 투수가 9회를 무실점으로 막아내며 와일드카드 경쟁에 중요한 원정 승리를 챙겼어요.",
-      highlights:["8회초 보스턴 4득점 빅이닝", "8회말 양키스 반격 실패", "보스턴 마무리 투수 세이브 성공"],
-      players:[{name:"라파엘 데버스", team:"보스턴레드삭스", note:"역전 2타점 2루타를 기록한 결승타의 주인공"}] },
-    { id:"f7", date:"2026-09-10", sport:"basketball", league:"WKBL", time:"18:00", venue:"아산이순신체육관", home:"우리은행", away:"KB스타즈", note:"프리시즌", status:"finished", homeScore:78, awayScore:71,
-      recap:"우리은행이 4쿼터 뒷심을 발휘하며 KB스타즈를 78-71로 제압, 프리시즌 2연승을 달렸어요. 3쿼터까지 접전이었지만 4쿼터 수비 강도를 끌어올리며 상대 턴오버를 유도, 속공 득점으로 격차를 벌렸어요.",
-      highlights:["4쿼터 시작 8-0 런", "박지수 이번 경기 더블더블 기록", "KB스타즈 막판 추격 실패"],
-      players:[{name:"박지수", team:"우리은행", note:"18득점 13리바운드로 더블더블을 기록한 센터"}] },
-    { id:"f8", date:"2026-09-13", sport:"volleyball", league:"V리그", time:"19:00", venue:"장충체육관", home:"우리카드 우리WON", away:"OK저축은행 러시앤캐시", status:"finished", homeScore:3, awayScore:1,
-      recap:"우리카드가 세트 스코어 3-1로 OK저축은행을 꺾었어요. 1세트를 내주며 흔들렸지만 이후 서브 에이스를 앞세워 3세트 연속 따내며 승부를 뒤집었어요.",
-      highlights:["1세트 OK저축은행 선취", "2~4세트 우리카드 연속 세트 획득", "우리카드 서브 에이스 9개 기록"],
-      players:[{name:"신영석", team:"우리카드 우리WON", note:"서브 에이스 4개를 포함해 22득점으로 맹활약"}] },
-    { id:"f9", date:"2026-09-13", sport:"esports", league:"LCK", time:"17:00", venue:"LoL파크", home:"한화생명e스포츠", away:"KT 롤스터", status:"finished", homeScore:2, awayScore:1,
-      recap:"한화생명e스포츠가 세트 스코어 2-1로 KT 롤스터를 제압했어요. 1세트를 내줬지만 2세트부터 초반 오브젝트 싸움을 장악하며 흐름을 가져왔고, 3세트 후반 한타 승리로 시리즈를 마무리했어요.",
-      highlights:["2세트 초반 드래곤 3연속 획득", "3세트 후반 5:0 한타 승리", "KT 롤스터 1세트 완승"],
-      players:[{name:"제우스", team:"한화생명e스포츠", note:"3세트 한타 트리플킬로 승부를 결정지은 탑라이너"}] },
-    { id:"f10", date:"2026-09-13", sport:"motorsport", league:"F1", time:"22:00", venue:"몬자 서킷", home:"막스 페르스타펜", away:"란도 노리스", status:"finished", homeScore:1, awayScore:2,
-      recap:"막스 페르스타펜이 이탈리아 그랑프리에서 우승하며 시즌 포인트 선두를 지켰어요. 폴포지션에서 출발해 처음부터 끝까지 선두를 놓치지 않았고, 란도 노리스가 마지막 랩까지 추격했지만 0.8초 차로 우승을 놓쳤어요.",
-      highlights:["페르스타펜 폴투윈 완주", "노리스 마지막 랩 추격 실패(0.8초 차)", "샤를 르클레르 홈 그랑프리 3위"],
-      players:[{name:"막스 페르스타펜", team:"레드불", note:"이번 시즌 6번째 우승으로 포인트 선두 유지"}],
-      raceResults:[
-        { position:1, name:"막스 페르스타펜", team:"레드불", gap:"우승" },
-        { position:2, name:"란도 노리스", team:"맥라렌", gap:"+0.8초" },
-        { position:3, name:"샤를 르클레르", team:"페라리", gap:"+6.2초" },
-        { position:4, name:"오스카 피아스트리", team:"맥라렌", gap:"+11.4초" },
-        { position:5, name:"루이스 해밀턴", team:"페라리", gap:"+18.9초" }
-      ] },
-    { id:"f11", date:"2026-09-10", sport:"fighting", league:"UFC", time:"12:00", venue:"T-모바일 아레나", home:"이스라엘 아데산야", away:"알렉스 페레이라", status:"finished", homeScore:1, awayScore:0,
-      recap:"이스라엘 아데산야가 3라운드 KO로 알렉스 페레이라를 꺾으며 통산 라이벌전 전적을 만회했어요. 1~2라운드는 팽팽했지만 3라운드 초반 정확한 카운터 펀치로 상대를 다운시키며 경기를 끝냈어요.",
-      highlights:["1~2라운드 팽팽한 타격전", "3라운드 초반 카운터 펀치 다운", "레퍼리 스톱으로 KO 승 선언"],
-      players:[{name:"이스라엘 아데산야", team:"미들급", note:"정확한 카운터로 KO승, 랭킹 상승 예상"}] }
-  ];
-
-  var NEWS = [
-    { sport:"soccer", src:"축구", when:"32분 전", title:"K리그1 상위권 압축, 남은 8경기 우승 경쟁 '초박빙'" },
-    { sport:"baseball", src:"야구", when:"1시간 전", title:"KBO 가을야구 매직넘버 점점 줄어드는 상위 5개 팀" },
-    { sport:"soccer", src:"해외축구", when:"2시간 전", title:"아스널, 홈에서 토트넘과 북런던더비 앞두고 총력전" },
-    { sport:"baseball", src:"야구", when:"3시간 전", title:"MLB 와일드카드 경쟁 막바지, 동부지구 승차 좁혀져" },
-    { sport:"basketball", src:"농구", when:"어제", title:"KBL 개막 앞두고 각 구단 프리시즌 담금질 한창" },
-    { sport:"soccer", src:"축구", when:"어제", title:"울산HD, 원정 5연승 도전…FC서울전 선발 라인업 촉각" },
-    { sport:"baseball", src:"야구", when:"2일 전", title:"LG-두산 잠실 라이벌전, 선발 매치업 최종 확정" },
-    { sport:"basketball", src:"농구", when:"2일 전", title:"WKBL 프리시즌 관전 포인트, 외국인 선수 활약 눈길" },
-    { sport:"volleyball", src:"배구", when:"1시간 전", title:"V리그 개막 D-14, 각 구단 외국인 선수 최종 엔트리 확정" },
-    { sport:"esports", src:"e스포츠", when:"2시간 전", title:"LCK 서머 플레이오프 대진 확정, T1-Gen.G 4강 매치업 관심" },
-    { sport:"motorsport", src:"모터스포츠", when:"3시간 전", title:"F1 싱가포르 GP 앞두고 페르스타펜 포인트 선두 굳히기 나서" },
-    { sport:"fighting", src:"격투기", when:"어제", title:"UFC 미들급 랭킹 요동, 차기 타이틀 도전자 윤곽" }
-  ];
-
-  var STANDINGS = [
-    { team:"울산HD", pts:62, gd:"+24" },
-    { team:"FC서울", pts:58, gd:"+15" },
-    { team:"전북현대", pts:55, gd:"+11" },
-    { team:"포항스틸러스", pts:51, gd:"+6" },
-    { team:"광주FC", pts:47, gd:"+2" }
-  ];
-
-  var PREVIEWS = {
-    soccer1:{
-      league:"K리그1 · 9.14 19:00", homeSub:"리그 2위 · 홈 최근 4승 1무", awaySub:"리그 1위 · 원정 최근 3승 2무",
-      prob:{ home:34, draw:26, away:40 },
-      stats:[
-        { label:"최근 5경기 평균 득점", home:"1.8", away:"2.4", homePct:43, awayPct:57 },
-        { label:"최근 5경기 평균 실점", home:"1.0", away:"0.8", homePct:44, awayPct:56 },
-        { label:"시즌 승점", home:"58", away:"62", homePct:48, awayPct:52 },
-        { label:"슈팅 성공률", home:"31%", away:"38%", homePct:45, awayPct:55 }
-      ],
-      formHome:["W","W","D","W","L"], formAway:["W","W","W","D","W"],
-      analysis:"울산HD가 최근 5경기 중 4승으로 상승세가 뚜렷하지만, FC서울은 홈에서 실점이 적고 세트피스 효율이 높은 편이에요. 양 팀 승점 격차가 4점으로 좁혀진 만큼 후반 집중력 싸움이 승부를 가를 가능성이 커요."
-    },
-    baseball1:{
-      league:"KBO · 9.14 18:30 · LIVE 7회초", homeSub:"1위 · 최근 홈 6연승", awaySub:"3위 · 원정 타율 리그 2위",
-      prob:{ home:58, draw:0, away:42 },
-      stats:[
-        { label:"선발 평균자책점", home:"3.12", away:"3.85", homePct:55, awayPct:45 },
-        { label:"팀 타율", home:".284", away:".291", homePct:49, awayPct:51 },
-        { label:"불펜 평균자책점", home:"3.40", away:"4.10", homePct:55, awayPct:45 },
-        { label:"최근 10경기", home:"7승 3패", away:"6승 4패", homePct:52, awayPct:48 }
-      ],
-      formHome:["W","W","W","L","W"], formAway:["W","L","W","W","D"],
-      analysis:"LG는 강력한 불펜진을 앞세워 홈 6연승을 달리고 있고, 현재 3-2로 앞선 채 7회를 맞이했어요. 두산은 원정 타율이 높아 후반 뒤집기 저력이 있는 팀이라 막판까지 접전이 예상돼요."
-    },
-    soccer2:{
-      league:"프리미어리그 · 9.14 23:00", homeSub:"리그 1위 · 홈 무패", awaySub:"리그 5위 · 더비 최근 열세",
-      prob:{ home:52, draw:25, away:23 },
-      stats:[
-        { label:"최근 5경기 평균 득점", home:"2.2", away:"1.6", homePct:58, awayPct:42 },
-        { label:"최근 5경기 평균 실점", home:"0.6", away:"1.4", homePct:70, awayPct:30 },
-        { label:"북런던더비 최근 5회 전적", home:"3승", away:"1승", homePct:60, awayPct:20 },
-        { label:"점유율 평균", home:"61%", away:"52%", homePct:54, awayPct:46 }
-      ],
-      formHome:["W","W","W","D","W"], formAway:["L","W","D","W","L"],
-      analysis:"아스널은 홈에서 실점이 거의 없을 만큼 안정적인 수비를 자랑하고, 북런던더비 최근 전적에서도 우위에 있어요. 토트넘은 역습 상황에서의 득점력이 변수가 될 수 있어요."
-    }
-  };
 
   var BROADCAST = {
     "K리그1": { name:"쿠팡플레이", url:"https://www.coupangplay.com" },
@@ -899,6 +772,12 @@
   function isoOf(y,m,d){ return y + "-" + pad2(m+1) + "-" + pad2(d); }
   function fmtNum(n){ return n.toLocaleString("ko-KR"); }
 
+  // 이 사이트는 경기 리뷰·분석 기사·선수 프로필을 자체적으로 만들어내지
+  // 않아요(그런 걸 지어내면 실제 선수·팀에 대한 거짓 정보가 될 수 있어서요).
+  // 대신 실제 검색 결과로 바로 연결되는 링크만 제공해요 — 이 링크가 여는
+  // 페이지의 내용은 네이버가 실시간으로 채우는 진짜 검색 결과예요.
+  function searchUrl(q){ return "https://search.naver.com/search.naver?query=" + encodeURIComponent(q); }
+
   // ---- LocalStorage helpers (per-viewer convenience only) ----
   function lsGet(key, fallback){
     try{ var v = JSON.parse(localStorage.getItem(key)); return v === null || v === undefined ? fallback : v; }
@@ -916,12 +795,17 @@
   var state = {
     sports: { soccer:true, baseball:true, basketball:true, volleyball:true, esports:true, motorsport:true, fighting:true },
     selectedDate: TODAY_ISO,
-    selectedMatchId: "s4",
+    selectedMatchId: null,
     q: "",
     calYear: today.getFullYear(),
     calMonth: today.getMonth(),
     pickedOutcome: null,
-    pickedAmount: 1000
+    pickedAmount: 1000,
+    // 실시간 데이터를 아직 못 가져온 종목은 true예요. live-data.js가 데이터를
+    // 가져오는 데 성공/실패하면 false로 바뀌어요. fighting(격투기)은 아직
+    // 연동할 실제 데이터 소스가 없어서 처음부터 false예요(로딩이 아니라
+    // "연동 안 됨" 상태를 정직하게 보여주기 위해서예요).
+    loadingSports: { soccer:true, baseball:true, basketball:true, volleyball:true, esports:true, motorsport:true, fighting:false }
   };
 
   function matchesFilters(m){
@@ -1020,7 +904,9 @@
       : m.status==="finished"
       ? '<div class="row-score num">' + m.homeScore + '-' + m.awayScore + '</div><span class="row-time">종료' + (opts.showDate ? " · " + m.date.slice(5).replace("-",".") : "") + '</span>'
       : '<div class="row-time num">' + m.time + '</div>';
-    var teaser = (opts.showDate && m.recap) ? '<div class="row-teaser">' + m.recap.split(".")[0] + '.</div>' : "";
+    // ⚠️ 예전엔 여기서 가짜로 지어낸 recap 문장을 한 줄 미리보기로 보여줬어요.
+    // 실제 경기 내용에 대한 거짓 정보가 될 수 있어서 완전히 없앴어요.
+    var teaser = "";
     row.innerHTML =
       sportDot(m.sport) +
       '<div class="row-main"><div class="row-league">' + m.league + '</div><div class="row-teams">' + m.home + ' vs ' + m.away + '</div>' + teaser + '</div>' +
@@ -1043,6 +929,16 @@
   }
 
   // ================= Day list =================
+  // 현재 화면에 켜져 있는 종목 중, 아직 실시간 데이터를 못 받아온(불러오는 중인)
+  // 종목이 있으면 true예요. 목록이 비어 있을 때 "경기가 없어요"라고 단정짓지
+  // 않고 "불러오는 중"이라고 정직하게 보여주기 위해 써요.
+  function anySelectedSportLoading(){
+    return SPORT_ORDER.some(function(s){ return state.sports[s] && state.loadingSports[s]; });
+  }
+  function emptyStateHtml(fallbackMsg){
+    return anySelectedSportLoading() ? "실시간 경기 정보를 불러오는 중이에요…" : fallbackMsg;
+  }
+
   function renderDayList(){
     var d = state.selectedDate.split("-");
     document.getElementById("dayTitle").textContent = (state.selectedDate === TODAY_ISO ? "오늘 · " : "") + d[1] + "월 " + d[2] + "일";
@@ -1051,7 +947,7 @@
     document.getElementById("dayCount").textContent = items.length + "경기";
     var host = document.getElementById("dayList");
     host.innerHTML = "";
-    if(!items.length){ host.appendChild(el("div","empty","이 날짜엔 선택한 종목의 경기가 없어요.")); return; }
+    if(!items.length){ host.appendChild(el("div","empty",emptyStateHtml("이 날짜엔 선택한 종목의 경기가 없어요."))); return; }
     items.forEach(function(m){ host.appendChild(buildMatchRow(m)); });
   }
   document.getElementById("dayList").addEventListener("click", function(e){
@@ -1068,7 +964,7 @@
     document.getElementById("finishedCount").textContent = items.length + "경기";
     var host = document.getElementById("finishedList");
     host.innerHTML = "";
-    if(!items.length){ host.appendChild(el("div","empty","조건에 맞는 경기가 없어요.")); return; }
+    if(!items.length){ host.appendChild(el("div","empty",emptyStateHtml("조건에 맞는 경기가 없어요."))); return; }
     items.forEach(function(m){ host.appendChild(buildMatchRow(m, { showDate:true })); });
   }
   document.getElementById("finishedList").addEventListener("click", function(e){
@@ -1087,7 +983,7 @@
     var list = live.concat(upcoming, recentFinished).slice(0,9);
     var wrap = document.getElementById("ticker");
     wrap.innerHTML = "";
-    if(!list.length){ wrap.appendChild(el("div","empty-t","표시할 경기가 없어요.")); return; }
+    if(!list.length){ wrap.appendChild(el("div","empty-t",emptyStateHtml("표시할 경기가 없어요."))); return; }
     list.forEach(function(m){
       var chip = el("button","chip" + (m.status==="live" ? " is-live" : ""));
       chip.type = "button";
@@ -1108,14 +1004,25 @@
   });
 
   // ================= News =================
+  // ⚠️ 예전엔 여기가 가짜 헤드라인·가짜 "32분 전" 같은 시간 표시로 채워진
+  // 뉴스 피드였어요 — 실제 기사처럼 보이지만 전혀 실재하지 않는 내용이라
+  // 완전히 없앴어요. 지금은 현재 화면에 나와 있는 리그들 각각에 대해
+  // 실제 뉴스 검색으로 바로 연결되는 링크만 보여줘요.
   function renderNews(){
     var host = document.getElementById("newsList");
     host.innerHTML = "";
-    var filtered = NEWS.filter(function(n){ return state.sports[n.sport]; });
-    if(!filtered.length){ host.appendChild(el("div","empty","선택한 종목의 뉴스가 없어요.")); return; }
-    filtered.forEach(function(n){
-      var item = el("div","news-item");
-      item.innerHTML = '<div class="src">' + n.src + '</div><div class="headline">' + n.title + '</div><div class="when">' + n.when + '</div>';
+    var leagues = [];
+    MATCHES.forEach(function(m){
+      if(!state.sports[m.sport]) return;
+      if(leagues.indexOf(m.league) === -1) leagues.push(m.league);
+    });
+    if(!leagues.length){ host.appendChild(el("div","empty","선택한 종목의 경기가 없어요.")); return; }
+    leagues.slice(0,8).forEach(function(lg){
+      var item = el("a","news-item");
+      item.href = searchUrl(lg + " 뉴스");
+      item.target = "_blank";
+      item.rel = "noopener";
+      item.innerHTML = '<div class="src">실제 검색 결과</div><div class="headline">' + lg + ' 최신 뉴스 보기 ↗</div><div class="when">네이버 검색으로 연결돼요</div>';
       host.appendChild(item);
     });
   }
@@ -1124,6 +1031,10 @@
   function renderStandings(){
     var host = document.getElementById("standingsList");
     host.innerHTML = "";
+    if(!STANDINGS.length){
+      host.appendChild(el("div","empty","실제 순위표 연동은 아직 안 됐어요."));
+      return;
+    }
     STANDINGS.forEach(function(s, i){
       var row = el("div","standing-row");
       row.innerHTML = '<span class="rank num">' + (i+1) + '</span><span class="team">' + s.team + '</span><span class="gd num">' + s.gd + '</span><span class="pts num">' + s.pts + '</span>';
@@ -1160,67 +1071,64 @@
       return out;
     }
 
-    var favored = home >= away ? m.home : m.away;
-    var predicted = favored + "이(가) 최근 데이터 기준 근소하게 앞서는 것으로 분석돼요. " +
-      (home >= away ? m.away : m.home) + "은(는) " + (m.sport === "baseball" ? "타선 응집력" : m.sport === "basketball" ? "속공 전환" : "세트피스 상황") +
-      "에서 변수를 만들 수 있어, 예상보다 접전이 될 가능성도 있어요.";
-    var analysis = m.status === "finished" ? (m.recap || predicted) : predicted;
+    // ⚠️ 정직하게: 이 사이트는 실제 경기 분석 기사를 작성하지 않아요. 아래
+    // analysis 텍스트는 지금 실제로 가지고 있는 정보(날짜·장소·스코어·상태)만
+    // 그대로 문장으로 옮긴 거고, 팀 전력이나 흐름에 대한 어떤 추측·평가도
+    // 담지 않아요. 더 자세한 내용은 아래 실제 뉴스 검색 링크에서 확인하세요.
+    var dateLabel = m.date.slice(5).replace("-",".");
+    var analysis;
+    if(m.status === "finished"){
+      analysis = dateLabel + " " + (m.venue ? m.venue + "에서 열린 " : "") + m.league + " 경기, 최종 스코어는 " +
+        m.home + " " + (m.homeScore!=null?m.homeScore:"?") + " - " + (m.awayScore!=null?m.awayScore:"?") + " " + m.away + "예요. " +
+        "이 사이트는 경기 리뷰나 전력 분석 기사를 직접 작성하지 않아요 — 아래 '실제 기사 검색' 링크에서 진짜 기사를 확인해보세요.";
+    } else if(m.status === "live"){
+      analysis = dateLabel + " " + (m.venue ? m.venue + "에서 " : "") + m.league + " 경기가 진행 중이에요" + (m.inning ? " (" + m.inning + ")" : "") + ". " +
+        "실시간 중계·최신 상황은 아래 링크에서 확인해보세요.";
+    } else {
+      analysis = dateLabel + " " + m.time + " " + (m.venue ? m.venue + "에서 " : "") + "예정된 " + m.league + " 경기예요. " +
+        "이 사이트는 승부 예측이나 전력 분석 기사를 직접 작성하지 않아요 — 아래 화면의 승률(%)은 실제 통계가 아니라 화면 구성을 위한 시뮬레이션 값이고, 실제 프리뷰 기사는 아래 링크에서 확인할 수 있어요.";
+    }
 
     return {
-      league: m.league + " · " + m.date.slice(5).replace("-",".") + " " + m.time + (m.status==="live" ? " · LIVE" + (m.inning ? " " + m.inning : "") : m.status==="finished" ? " · 경기 종료" : ""),
-      homeSub: m.status==="finished" ? "최근 흐름" : "예상 전력 지수 " + home + "점",
-      awaySub: m.status==="finished" ? "최근 흐름" : "예상 전력 지수 " + away + "점",
+      league: m.league + " · " + dateLabel + " " + m.time + (m.status==="live" ? " · LIVE" + (m.inning ? " " + m.inning : "") : m.status==="finished" ? " · 경기 종료" : ""),
+      homeSub: m.status==="finished" ? "최종" : "시뮬레이션 지수 " + home + "점(실제 통계 아님)",
+      awaySub: m.status==="finished" ? "최종" : "시뮬레이션 지수 " + away + "점(실제 통계 아님)",
       prob:{ home:home, draw:draw, away:away }, stats:stats,
       formHome: formArr(home/100), formAway: formArr(away/100),
       analysis: analysis,
-      highlights: m.highlights, players: m.players
+      newsQuery: m.home + " " + m.away + " " + m.league + (m.status==="finished" ? " 결과" : " 프리뷰")
     };
   }
 
-  var PLAYER_POOLS = {
-    soccer:["이강인","손흥민","황희찬","김민재","설영우","이현일","원두재","엄원상"],
-    baseball:["김도영","이정후","강백호","원태인","고우석","최정","박세웅","구자욱"],
-    basketball:["허웅","이정현","양홍석","최준용","박지훈"],
-    volleyball:["신영석","박상하","허수봉","정지석"],
-    esports:["제우스","오너","페이커","케리아","기인"],
-    motorsport:["막스 페르스타펜","란도 노리스","샤를 르클레르","루이스 해밀턴"],
-    fighting:["이스라엘 아데산야","알렉스 페레이라","존 존스","프랜시스 은가누"]
-  };
-  var PLAYER_NOTE = {
-    soccer:"세트피스와 결정력에서 승부를 가를 핵심 변수", baseball:"타순 흐름을 좌우할 이번 경기 키플레이어",
-    basketball:"속공과 리바운드 싸움에서 주목할 선수", volleyball:"서브·리시브 안정감이 관건인 선수",
-    esports:"초반 라인전 주도권을 쥘 것으로 보이는 선수", motorsport:"이번 그랑프리 우승 후보로 꼽히는 드라이버",
-    fighting:"경기 흐름을 결정지을 것으로 보이는 선수"
-  };
+  // ⚠️ 예전엔 여기서 실제 선수 이름 목록 중 아무나 골라서 "이번 경기 키플레이어"라고
+  // 표시했어요 — 그 경기에 그 선수가 실제로 나왔는지 전혀 확인하지 않은 채로요.
+  // 실제 선수에 대한 거짓 정보가 될 수 있어서 완전히 없앴어요. 이 사이트는 팀별
+  // 로스터/출전 정보를 갖고 있지 않으니, 대신 각 팀의 실제 선수단·뉴스를 바로
+  // 검색해볼 수 있는 링크만 보여줘요 (특정 선수를 지목하지 않아요).
   function genPlayers(m){
-    var pool = PLAYER_POOLS[m.sport] || [];
-    if(!pool.length) return [];
-    var i1 = Math.floor(rand(m.id,"pl1") * pool.length);
-    var i2 = (i1 + 1 + Math.floor(rand(m.id,"pl2") * (pool.length-1))) % pool.length;
     return [
-      { name:pool[i1], team:m.home, note:PLAYER_NOTE[m.sport] || "이번 경기 주목할 선수" },
-      { name:pool[i2], team:m.away, note:PLAYER_NOTE[m.sport] || "이번 경기 주목할 선수" }
+      { name:m.home, team:m.league, url:searchUrl(m.home + " 선수단"), linkLabel:"선수단·소식 검색 ↗" },
+      { name:m.away, team:m.league, url:searchUrl(m.away + " 선수단"), linkLabel:"선수단·소식 검색 ↗" }
     ];
   }
 
+  // ⚠️ 예전엔 여기서 두 팀의 "최근 맞대결" 스코어를 날짜까지 지어내서 보여줬어요 —
+  // 실제로 그 경기가 있었는지, 스코어가 맞는지 전혀 확인된 게 아니었어요. 실제
+  // 경기 기록에 대한 거짓 정보라서 완전히 없앴어요. h2h 섹션은 이제 항상 빈 채로
+  // 남고(화면에서 숨겨져요), 상대전적이 궁금하면 분석 링크의 실제 검색 결과에서
+  // 확인할 수 있어요.
   function genH2H(m){
-    var out = [];
-    var offsets = [42, 118, 206];
-    var base = new Date(m.date + "T00:00:00");
-    for(var i=0;i<3;i++){
-      var d = new Date(base.getTime() - offsets[i]*86400000);
-      var iso = d.getFullYear() + "." + pad2(d.getMonth()+1) + "." + pad2(d.getDate());
-      var hv = Math.round(rand(m.id,"h2h_h"+i) * (m.sport==="basketball" ? 40 : m.sport==="volleyball" ? 3 : 4));
-      var av = Math.round(rand(m.id,"h2h_a"+i) * (m.sport==="basketball" ? 40 : m.sport==="volleyball" ? 3 : 4));
-      if(m.sport==="basketball"){ hv += 68; av += 68; }
-      out.push({ date:iso, home:m.home, away:m.away, homeScore:hv, awayScore:av });
-    }
-    return out;
+    return [];
   }
 
   function getPreviewData(m){
-    var base = (m.previewId && PREVIEWS[m.previewId]) ? Object.assign({}, PREVIEWS[m.previewId]) : buildGeneric(m);
-    if(!base.players || !base.players.length) base.players = genPlayers(m);
+    // previewId가 있는 3개 데모 매치업(soccer1/soccer2/baseball1)은 예전에
+    // 승점·연승·상대전적 같은 구체적인 수치를 지어내서 PREVIEWS 안에 넣어뒀는데,
+    // 이것도 실제 팀에 대한 거짓 정보라 더 이상 쓰지 않아요. 확률/스탯바/폼 표시는
+    // (시뮬레이션이라고 화면에 명시돼 있는) buildGeneric의 계산값으로 통일하고,
+    // 문장형 분석·선수·상대전적은 항상 아래에서 사실 기반으로 다시 만들어요.
+    var base = buildGeneric(m);
+    base.players = genPlayers(m);
     base.h2h = genH2H(m);
     return base;
   }
@@ -1399,8 +1307,9 @@
     document.getElementById("pvFormAwayLabel").textContent = p.formAway.filter(function(r){return r==="W";}).length + "승";
     document.getElementById("pvFormHome").innerHTML = p.formHome.map(function(r){ return '<span class="form-pill ' + r + '">' + r + '</span>'; }).join("");
     document.getElementById("pvFormAway").innerHTML = p.formAway.map(function(r){ return '<span class="form-pill ' + r + '">' + r + '</span>'; }).join("");
-    document.getElementById("analysisTag").textContent = isFinished ? "경기 리뷰" : "전력 분석 요약";
+    document.getElementById("analysisTag").textContent = isFinished ? "경기 정보" : "경기 정보";
     document.getElementById("analysisText").textContent = p.analysis;
+    document.getElementById("analysisNewsLink").href = searchUrl(p.newsQuery);
 
     // H2H — always shown regardless of status
     var h2hHost = document.getElementById("h2hList");
@@ -1415,38 +1324,38 @@
         '<span class="h2h-team' + (aw?' win':'') + '">' + g.away + '</span>';
       h2hHost.appendChild(row);
     });
-    document.getElementById("h2hSection").hidden = isMotorsport || !(p.h2h && p.h2h.length);
+    document.getElementById("h2hSection").hidden = true; // 실제 상대전적 데이터가 없어서 늘 숨겨요
 
-    // Players — always shown, label changes by status
-    document.getElementById("playersTag").textContent = isFinished ? "주요 선수" : "주목할 선수";
+    // 선수 카드 — 특정 선수를 "키플레이어"라고 지목하지 않고(그 근거가 없어서),
+    // 각 팀의 실제 선수단/뉴스를 검색해볼 수 있는 링크로 바꿨어요. 클릭하면
+    // 네이버 검색 결과(실제 페이지)로 새 탭에서 이동해요.
+    document.getElementById("playersTag").textContent = "선수단 정보";
     var plHost = document.getElementById("playerCards");
     plHost.innerHTML = "";
     (p.players || []).forEach(function(pl){
-      var card = el("div","player-card");
-      card.innerHTML = '<div class="p-name">' + pl.name + '</div><div class="p-team">' + pl.team + '</div><div class="p-note">' + pl.note + '</div>';
+      var card = el("a","player-card");
+      card.href = pl.url;
+      card.target = "_blank";
+      card.rel = "noopener";
+      card.innerHTML = '<div class="p-name">' + pl.name + '</div><div class="p-team">' + pl.team + '</div><div class="p-note">' + pl.linkLabel + '</div>';
       plHost.appendChild(card);
     });
     document.getElementById("playersSection").hidden = !(p.players && p.players.length);
 
-    document.getElementById("highlightsSection").hidden = !isFinished;
+    // 하이라이트(실제 경기 장면 텍스트 묘사)는 우리가 직접 본 게 아니라서 항상 숨겨요.
+    document.getElementById("highlightsSection").hidden = true;
 
-    if(isFinished){
-      var hlHost = document.getElementById("highlightsList");
-      hlHost.innerHTML = "";
-      (p.highlights || []).forEach(function(h){ hlHost.appendChild(el("li","", h)); });
-      document.getElementById("highlightsSection").hidden = !(p.highlights && p.highlights.length);
-    }
-
-    // Related news — shown for every match, filtered by sport
+    // 관련 뉴스 — 예전엔 가짜 헤드라인 목록이었는데, 실제 기사인 것처럼 보여서
+    // 완전히 없앴어요. 대신 실제 검색 결과로 바로 연결되는 링크 하나만 보여줘요.
     var newsHost = document.getElementById("relatedNewsList");
     newsHost.innerHTML = "";
-    var related = NEWS.filter(function(n){ return n.sport === m.sport; }).slice(0,3);
-    if(!related.length){ newsHost.appendChild(el("div","empty","관련 뉴스가 없어요.")); }
-    related.forEach(function(n){
-      var item = el("div","news-item");
-      item.innerHTML = '<div class="src">' + n.src + '</div><div class="headline">' + n.title + '</div><div class="when">' + n.when + '</div>';
-      newsHost.appendChild(item);
-    });
+    var newsLinkItem = el("a", "news-item");
+    newsLinkItem.href = searchUrl(p.newsQuery);
+    newsLinkItem.target = "_blank";
+    newsLinkItem.rel = "noopener";
+    newsLinkItem.innerHTML = '<div class="src">실제 검색 결과</div><div class="headline">' + m.home + ' · ' + m.away + ' 관련 기사 보기 ↗</div><div class="when">네이버 검색으로 연결돼요</div>';
+    newsHost.appendChild(newsLinkItem);
+    document.getElementById("relatedNewsSection").hidden = false;
 
     // Community prediction sentiment (simulated) + personal vote
     // — 모터스포츠는 홈/무/원정 구도가 아니라서 이 커뮤니티 예측 UI가 안 맞아요, 숨겨요.
@@ -1684,7 +1593,7 @@
   applyFilters();
   checkLiveBookmarkNotifications();
 
-  document.getElementById("updatedAt").textContent = "마지막 업데이트: 2026년 9월 14일 기준 예시 데이터";
+  document.getElementById("updatedAt").textContent = "실시간 경기 정보를 불러오는 중이에요…";
 
   // ================= Live data integration hook =================
   // live-data.js(선택적으로 로드되는 외부 스크립트)가 실제 API에서 가져온
@@ -1698,13 +1607,21 @@
     // id는 "live-"로 시작하도록 지어주세요 (예시 데이터 id와 겹치지 않도록).
     setSportMatches: function(sport, matches){
       if(!sport || !Array.isArray(matches)) return;
-      // 해당 종목의 기존 예시 데이터를 지우고 실제 데이터로 교체해요.
+      // 해당 종목의 기존 데이터를 지우고 실제 데이터로 교체해요.
       for(var i = MATCHES.length - 1; i >= 0; i--){
         if(MATCHES[i].sport === sport) MATCHES.splice(i, 1);
       }
       matches.forEach(function(m){
         if(m && m.sport === sport) MATCHES.push(m);
       });
+      state.loadingSports[sport] = false; // 데이터를 받았으니 "불러오는 중" 상태를 끝내요
+      window.MATCHDAY.refreshAll();
+    },
+    // live-data.js가 어떤 종목을 시도했지만 결과가 0건이거나 요청이 실패했을 때도
+    // 이걸 호출해서 "불러오는 중" 표시가 영원히 남지 않도록 해줘요.
+    setLoading: function(sport, isLoading){
+      if(!sport || !(sport in state.loadingSports)) return;
+      state.loadingSports[sport] = !!isLoading;
       window.MATCHDAY.refreshAll();
     },
     // 화면 전체를 다시 그려요 (여러 종목을 한꺼번에 갱신한 뒤 한 번만 호출해도 돼요).

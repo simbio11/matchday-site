@@ -37,7 +37,7 @@
 
   // TheSportsDB 무료 공개 테스트 키예요(회원가입 불필요, 공식 문서에 명시된 값이라
   // 숨길 필요가 없어요). 분당 30회 제한이 있어서 너무 자주 새로고침하면 막힐 수 있어요.
-  var SPORTSDB_KEY = "https://matchdayvercel.vercel.app";
+  var SPORTSDB_KEY = "123";
   var SPORTSDB_BASE = "https://www.thesportsdb.com/api/v1/json/" + SPORTSDB_KEY;
 
   // 종목별로 여러 리그를 넣을 수 있어요. 전부 실제 id로 호출해서 2026년 현재
@@ -51,8 +51,8 @@
       { id: 4689, label: "K리그1" },
       { id: 4328, label: "EPL" }
     ],
-    baseball: [{ id: 4830, label: "KBO" }],
-    basketball: [{ id: 5124, label: "KBL" }],
+    baseball: [ { id: 4830, label: "KBO" } ],
+    basketball: [ { id: 5124, label: "KBL" } ],
     volleyball: [
       { id: 5757, label: "V리그(남)" },
       { id: 5756, label: "V리그(여)" }
@@ -130,7 +130,7 @@
   function mapSportsDbStatus(raw) {
     var status = (raw.strStatus || "").toUpperCase().trim();
     var hasScore = raw.intHomeScore !== null && raw.intHomeScore !== undefined &&
-      raw.intAwayScore !== null && raw.intAwayScore !== undefined;
+                   raw.intAwayScore !== null && raw.intAwayScore !== undefined;
     if (SPORTSDB_FINISHED_HINTS.indexOf(status) !== -1) return "finished";
     if (SPORTSDB_LIVE_HINTS.indexOf(status) !== -1) return "live";
     if (status === "" && hasScore) return "finished"; // 지난 경기 조회는 보통 상태값이 비어있어요
@@ -162,10 +162,19 @@
   // TheSportsDB는 날짜별로 반복 조회할 필요 없이, 리그당 "다음 경기들"과
   // "지난 경기들"을 한 번씩만 불러오면 돼요 (요청 횟수가 훨씬 적어요).
 
+  function markLoadDone(sport){
+    // index.html의 화면이 "불러오는 중…" 표시를 언제까지나 띄워두지 않도록,
+    // 이 종목에 대한 시도가 끝났다는 걸(성공이든 실패든) 알려줘요.
+    if (window.MATCHDAY && typeof window.MATCHDAY.setLoading === "function") {
+      window.MATCHDAY.setLoading(sport, false);
+    }
+  }
+
   function loadSportFromSportsDb(matchdaySport) {
     var leagues = (LEAGUES[matchdaySport] || []).filter(function (lg) { return lg && lg.id; });
     if (!leagues.length) {
-      console.info("[live-data] LEAGUES." + matchdaySport + "이 비어 있어 이 종목은 예시 데이터를 유지합니다.");
+      console.info("[live-data] LEAGUES." + matchdaySport + "이 비어 있어 이 종목은 건너뜁니다.");
+      markLoadDone(matchdaySport);
       return;
     }
     var calls = [];
@@ -185,8 +194,9 @@
         });
       });
       if (matches.length) window.MATCHDAY.setSportMatches(matchdaySport, matches);
-      else console.info("[live-data] " + matchdaySport + ": TheSportsDB에서 가져온 경기가 없어요 (예시 데이터 유지).");
-    });
+      else console.info("[live-data] " + matchdaySport + ": TheSportsDB에서 가져온 경기가 없어요.");
+      markLoadDone(matchdaySport);
+    }).catch(function () { markLoadDone(matchdaySport); });
   }
 
   function loadFootball() { loadSportFromSportsDb("soccer"); }
@@ -211,7 +221,7 @@
 
   function loadF1() {
     openf1("/sessions", { year: new Date().getFullYear() }).then(function (sessions) {
-      if (!Array.isArray(sessions) || !sessions.length) return;
+      if (!Array.isArray(sessions) || !sessions.length) { markLoadDone("motorsport"); return; }
       console.log("[live-data] openf1 sessions raw sample", sessions[0]);
 
       var now = Date.now();
@@ -292,8 +302,9 @@
         });
       })).then(function (matches) {
         if (matches.length) window.MATCHDAY.setSportMatches("motorsport", matches.filter(Boolean));
-      });
-    });
+        markLoadDone("motorsport");
+      }).catch(function () { markLoadDone("motorsport"); });
+    }).catch(function () { markLoadDone("motorsport"); });
   }
 
   // ---------------- e스포츠(LCK, PandaScore) ----------------
@@ -340,7 +351,8 @@
 
   function loadEsports() {
     if (!ESPORTS_WORKER_BASE) {
-      console.info("[live-data] esports: ESPORTS_WORKER_BASE가 비어 있어서 건너뛰어요 (예시 데이터 유지).");
+      console.info("[live-data] esports: ESPORTS_WORKER_BASE가 비어 있어서 건너뛰어요.");
+      markLoadDone("esports");
       return;
     }
     // LCK 리그 id를 먼저 찾아요 (하드코딩하지 않고 매번 이름으로 검색 — PandaScore
@@ -348,7 +360,8 @@
     esportsFetch("lol/leagues", { "search[name]": "LCK" }).then(function (leagues) {
       console.log("[live-data] esports LCK leagues raw sample", leagues);
       if (!Array.isArray(leagues) || !leagues.length) {
-        console.info("[live-data] esports: LCK 리그를 못 찾았어요 (예시 데이터 유지).");
+        console.info("[live-data] esports: LCK 리그를 못 찾았어요.");
+        markLoadDone("esports");
         return;
       }
       var leagueId = leagues[0].id;
@@ -364,9 +377,10 @@
           arr.forEach(function (raw) { matches.push(mapEsportsMatch(raw)); });
         });
         if (matches.length) window.MATCHDAY.setSportMatches("esports", matches);
-        else console.info("[live-data] esports: LCK 경기를 못 가져왔어요 (예시 데이터 유지).");
-      });
-    });
+        else console.info("[live-data] esports: LCK 경기를 못 가져왔어요.");
+        markLoadDone("esports");
+      }).catch(function () { markLoadDone("esports"); });
+    }).catch(function () { markLoadDone("esports"); });
   }
 
   // ---------------- 시작 ----------------
@@ -384,5 +398,12 @@
     loadEsports(); // ESPORTS_WORKER_BASE를 채워야 동작해요 (README 참고).
     // UFC/격투기(MMA)는 필요하시면 이어서 추가해드릴게요 (league/organization
     // 파라미터 이름을 api-sports.io MMA 문서에서 먼저 확인해야 정확히 짤 수 있어요).
+
+    // 안전장치: 네트워크 문제 등으로 위 요청들이 끝까지 응답하지 않는 극단적인
+    // 경우를 대비해서, 20초 뒤에는 화면의 "불러오는 중…" 표시가 무한정 남지
+    // 않도록 강제로 정리해요.
+    setTimeout(function () {
+      ["soccer", "baseball", "basketball", "volleyball", "esports", "motorsport"].forEach(markLoadDone);
+    }, 20000);
   });
 })();
