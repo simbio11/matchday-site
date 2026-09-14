@@ -57,8 +57,8 @@
       { id: 4689, label: "K리그1" },
       { id: 4328, label: "EPL" }
     ],
-    baseball: [{ id: 4830, label: "KBO" }],
-    basketball: [{ id: 5124, label: "KBL" }],
+    baseball: [ { id: 4830, label: "KBO" } ],
+    basketball: [ { id: 5124, label: "KBL" } ],
     volleyball: [
       { id: 5757, label: "V리그(남)" },
       { id: 5756, label: "V리그(여)" }
@@ -81,7 +81,7 @@
   // /api/esports/... 프록시를 거쳐서 불러와요. 아래에 Vercel 배포 주소를 넣어야
   // 동작해요 (예: "https://matchdayvercel.vercel.app"). 비어있으면 조용히 건너뛰고
   // 예시 데이터가 그대로 유지돼요.
-  var ESPORTS_WORKER_BASE = "https://matchdayvercel.vercel.app";
+  var ESPORTS_WORKER_BASE = "";
 
   function proxyFetch(sport, path, params) {
     if (!WORKER_BASE) return Promise.resolve(null);
@@ -136,7 +136,7 @@
   function mapSportsDbStatus(raw) {
     var status = (raw.strStatus || "").toUpperCase().trim();
     var hasScore = raw.intHomeScore !== null && raw.intHomeScore !== undefined &&
-      raw.intAwayScore !== null && raw.intAwayScore !== undefined;
+                   raw.intAwayScore !== null && raw.intAwayScore !== undefined;
     if (SPORTSDB_FINISHED_HINTS.indexOf(status) !== -1) return "finished";
     if (SPORTSDB_LIVE_HINTS.indexOf(status) !== -1) return "live";
     if (status === "" && hasScore) return "finished"; // 지난 경기 조회는 보통 상태값이 비어있어요
@@ -168,7 +168,7 @@
   // TheSportsDB는 날짜별로 반복 조회할 필요 없이, 리그당 "다음 경기들"과
   // "지난 경기들"을 한 번씩만 불러오면 돼요 (요청 횟수가 훨씬 적어요).
 
-  function markLoadDone(sport) {
+  function markLoadDone(sport){
     // index.html의 화면이 "불러오는 중…" 표시를 언제까지나 띄워두지 않도록,
     // 이 종목에 대한 시도가 끝났다는 걸(성공이든 실패든) 알려줘요.
     if (window.MATCHDAY && typeof window.MATCHDAY.setLoading === "function") {
