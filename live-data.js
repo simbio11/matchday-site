@@ -8,8 +8,9 @@
 // 동작하지 않아요 — 반드시 외부 배포 후 사용하세요.)
 //
 // 이 스크립트가 하는 일:
-//   1) Cloudflare Worker 프록시(worker.js를 배포한 주소)를 통해
-//      api-sports.io의 축구/야구/농구/배구/격투기 데이터를 가져와요.
+//   1) 프록시(vercel-proxy 폴더를 배포한 주소 — 이전에 쓰던 worker.js/Cloudflare
+//      Workers는 api-sports.io 쪽에서 공유 IP를 막아둔 게 확인돼서 Vercel로
+//      옮겼어요)를 통해 api-sports.io의 축구/야구/농구/배구/격투기 데이터를 가져와요.
 //   2) F1은 키가 필요 없는 OpenF1(api.openf1.org)에서 "직접" 가져와요 (프록시 불필요).
 //   3) 가져온 데이터를 index.html이 이해하는 MATCHES 형식으로 변환해서
 //      window.MATCHDAY.setSportMatches(sport, matches) 로 화면에 반영해요.
@@ -29,20 +30,43 @@
 
   // ---------------- 설정 (여기를 채워주세요) ----------------
 
-  // 1) worker.js를 Cloudflare Workers에 배포하면 생기는 주소로 바꿔주세요.
-  //    예) "https://matchday-proxy.your-subdomain.workers.dev"
-  var WORKER_BASE = "https://matchday-proxy.cmkschcmksch.workers.dev"; // 예: "https://matchday-proxy.xxxx.workers.dev"
+  // 1) 프록시 배포 주소를 넣어주세요. Cloudflare Worker는 api-sports.io 쪽에서
+  //    공유 IP를 막아둔 게 확인돼서, Vercel Serverless Function(vercel-proxy
+  //    폴더)으로 바꾸는 걸 추천해요. Vercel 프로젝트를 배포하면 생기는
+  //    https://<프로젝트이름>.vercel.app 주소를 여기 넣어주세요.
+  var WORKER_BASE = "https://matchdayvercel.vercel.app"; // Vercel 프록시 (동작 확인 완료)
 
-  // 2) api-sports.io 가입 후 "Leagues" 검색으로 확인한 리그 번호를 넣어주세요.
-  //    (id를 모르면 null로 두세요 — 그 종목은 자동으로 건너뛰고 예시 데이터가 유지돼요.)
-  var LEAGUE_IDS = {
-    kleague1: null,   // 축구 - K리그1
-    kbo: null,        // 야구 - KBO
-    kbl: null,         // 농구 - KBL
-    vleague: null      // 배구 - V리그(남/여 따로 있으면 둘 다 필요할 수 있어요)
+  // 2) 종목별로 여러 리그를 배열로 넣을 수 있어요. 국내 리그는 확인 완료했고,
+  //    해외 리그도 원하시면 같은 방식으로 추가하면 돼요 (id를 모르면 배열에서
+  //    빼거나 비워두세요 — 그 리그만 건너뛰고 예시 데이터가 유지돼요).
+  //    프리미어리그(39)는 api-football 쪽에서 워낙 널리 알려진 공개 번호라
+  //    바로 넣어뒀어요. MLB/NBA 등 다른 해외 리그는 KBO 때처럼 curl로 직접
+  //    확인해서 알려주시면 추가해드릴게요 (NBA는 api-basketball이 아니라
+  //    별도의 v2.nba.api-sports.io 상품이라 별도 작업이 필요해요).
+  var LEAGUES = {
+    soccer: [
+      { id: 292, label: "K리그1" },
+      { id: 39, label: "프리미어리그" }
+    ],
+    baseball: [
+      { id: 5, label: "KBO" }
+      // { id: ???, label: "MLB" }  // curl로 확인되면 추가
+    ],
+    basketball: [
+      { id: 91, label: "KBL", season: "2026-2027" }
+      // NBA는 api-basketball이 아니라 별도 API라 지금 구조로는 못 붙여요.
+    ],
+    volleyball: [
+      { id: 151, label: "V리그(남)" },
+      { id: 152, label: "V리그(여)" }
+    ]
   };
 
   var SEASON = 2026;
+  // 농구(api-basketball)만 시즌 표기가 "2026"이 아니라 "2026-2027" 같은
+  // 문자열 형식이라, 위 LEAGUES.basketball 항목에 season을 따로 지정해뒀어요.
+  // 지금(2026-09-14)은 KBL 25-26시즌은 이미 끝났고 26-27시즌은 아직 개막 전
+  // (2026-10-03 시작)이라 이 사이엔 실제 경기가 없을 수 있어요.
 
   // 조회할 날짜 범위 (오늘 기준 ±N일). 너무 크게 잡으면 캐시가 자주 갱신되지 않을 수 있어요.
   var DAYS_BEFORE = 2;
@@ -156,100 +180,71 @@
     };
   }
 
-  // ---------------- 축구: K리그1 ----------------
+  // ---------------- 공용: 종목 하나를 (여러 리그 포함해서) 불러오기 ----------------
+  // apiSport: worker.js/vercel-proxy가 아는 이름 ("football","baseball","basketball","volleyball")
+  // matchdaySport: 사이트가 아는 이름 ("soccer","baseball","basketball","volleyball")
+  // path: "fixtures"(축구) 또는 "games"(그 외)
+  // mapper: (raw, label) => MATCHES 형식 객체
+
+  function loadSport(apiSport, matchdaySport, path, mapper) {
+    var leagues = LEAGUES[matchdaySport] || [];
+    leagues = leagues.filter(function (lg) { return lg && lg.id; });
+    if (!leagues.length) {
+      console.info("[live-data] LEAGUES." + matchdaySport + "이 비어 있어 이 종목은 예시 데이터를 유지합니다.");
+      return;
+    }
+    var dates = dateRange();
+    var calls = [];
+    leagues.forEach(function (lg) {
+      dates.forEach(function (d) {
+        calls.push(
+          proxyFetch(apiSport, path, { date: d, league: lg.id, season: lg.season || SEASON }).then(function (r) {
+            return { r: r, label: lg.label };
+          })
+        );
+      });
+    });
+    Promise.all(calls).then(function (results) {
+      var matches = [];
+      results.forEach(function (item) {
+        var r = item.r;
+        if (!r || !Array.isArray(r.response)) return;
+        r.response.forEach(function (raw) {
+          matches.push(mapper(raw, item.label));
+        });
+      });
+      if (matches.length) window.MATCHDAY.setSportMatches(matchdaySport, matches);
+    });
+  }
 
   function loadFootball() {
-    if (!LEAGUE_IDS.kleague1) {
-      console.info("[live-data] LEAGUE_IDS.kleague1이 비어 있어 축구는 예시 데이터를 유지합니다.");
-      return;
-    }
-    var dates = dateRange();
-    Promise.all(dates.map(function (d) {
-      return proxyFetch("football", "fixtures", { date: d, league: LEAGUE_IDS.kleague1, season: SEASON });
-    })).then(function (results) {
-      var matches = [];
-      results.forEach(function (r) {
-        if (!r || !Array.isArray(r.response)) return;
-        r.response.forEach(function (raw) {
-          matches.push(mapFootballFixture(raw, "K리그1"));
-        });
-      });
-      if (matches.length) window.MATCHDAY.setSportMatches("soccer", matches);
-    });
+    loadSport("football", "soccer", "fixtures", mapFootballFixture);
   }
-
-  // ---------------- 야구: KBO ----------------
 
   function loadBaseball() {
-    if (!LEAGUE_IDS.kbo) {
-      console.info("[live-data] LEAGUE_IDS.kbo가 비어 있어 야구는 예시 데이터를 유지합니다.");
-      return;
-    }
-    var dates = dateRange();
-    Promise.all(dates.map(function (d) {
-      return proxyFetch("baseball", "games", { date: d, league: LEAGUE_IDS.kbo, season: SEASON });
-    })).then(function (results) {
-      var matches = [];
-      results.forEach(function (r) {
-        if (!r || !Array.isArray(r.response)) return;
-        r.response.forEach(function (raw) {
-          matches.push(mapGenericGame(raw, "baseball", "KBO", {
-            home: ["scores.home.total", "scores.home"],
-            away: ["scores.away.total", "scores.away"]
-          }));
-        });
+    loadSport("baseball", "baseball", "games", function (raw, label) {
+      return mapGenericGame(raw, "baseball", label, {
+        home: ["scores.home.total", "scores.home"],
+        away: ["scores.away.total", "scores.away"]
       });
-      if (matches.length) window.MATCHDAY.setSportMatches("baseball", matches);
     });
   }
-
-  // ---------------- 농구: KBL ----------------
 
   function loadBasketball() {
-    if (!LEAGUE_IDS.kbl) {
-      console.info("[live-data] LEAGUE_IDS.kbl이 비어 있어 농구는 예시 데이터를 유지합니다.");
-      return;
-    }
-    var dates = dateRange();
-    Promise.all(dates.map(function (d) {
-      return proxyFetch("basketball", "games", { date: d, league: LEAGUE_IDS.kbl, season: SEASON });
-    })).then(function (results) {
-      var matches = [];
-      results.forEach(function (r) {
-        if (!r || !Array.isArray(r.response)) return;
-        r.response.forEach(function (raw) {
-          matches.push(mapGenericGame(raw, "basketball", "KBL", {
-            home: ["scores.home.total", "scores.home"],
-            away: ["scores.away.total", "scores.away"]
-          }));
-        });
+    loadSport("basketball", "basketball", "games", function (raw, label) {
+      return mapGenericGame(raw, "basketball", label, {
+        home: ["scores.home.total", "scores.home"],
+        away: ["scores.away.total", "scores.away"]
       });
-      if (matches.length) window.MATCHDAY.setSportMatches("basketball", matches);
     });
   }
 
-  // ---------------- 배구: V리그 ----------------
-
   function loadVolleyball() {
-    if (!LEAGUE_IDS.vleague) {
-      console.info("[live-data] LEAGUE_IDS.vleague가 비어 있어 배구는 예시 데이터를 유지합니다.");
-      return;
-    }
-    var dates = dateRange();
-    Promise.all(dates.map(function (d) {
-      return proxyFetch("volleyball", "games", { date: d, league: LEAGUE_IDS.vleague, season: SEASON });
-    })).then(function (results) {
-      var matches = [];
-      results.forEach(function (r) {
-        if (!r || !Array.isArray(r.response)) return;
-        r.response.forEach(function (raw) {
-          matches.push(mapGenericGame(raw, "volleyball", "V리그", {
-            home: ["scores.home.total", "scores.home"],
-            away: ["scores.away.total", "scores.away"]
-          }));
-        });
+    loadSport("volleyball", "volleyball", "games", function (raw, label) {
+      return mapGenericGame(raw, "volleyball", label, {
+        home: ["scores.home.total", "scores.home"],
+        away: ["scores.away.total", "scores.away"]
       });
-      if (matches.length) window.MATCHDAY.setSportMatches("volleyball", matches);
     });
   }
 
